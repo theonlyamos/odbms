@@ -1,4 +1,4 @@
-from flask_pymongo import PyMongo
+from pymongo import MongoClient
 from flask import Flask
 
 import os
@@ -11,12 +11,9 @@ class MongoDB(object):
     db = None
 
     @staticmethod
-    def initialize(app, host, port, database, user=None, password=None):
-        client = PyMongo()
-        if app:
-            app.config['MONGO_URI'] = f'mongodb://{host}:{port}/{database}'
-            client.init_app(app)
-        MongoDB.db = client.db
+    def initialize(host, port, database, user=None, password=None):
+        client = MongoClient(host, int(port))
+        MongoDB.db = client[database]
 
     @staticmethod
     def insert(collection, data):

@@ -13,7 +13,9 @@ def main(args):
 
     if not args.dbms:
         parser.print_help()
-    Database.load_defaults()
+        sys.exit(1)
+    if 'mysql' in args.dbms or 'mongodb' in args.dbms:
+        Database.load_defaults(args.dbms, args.database)
     while True:
         code = input('> ')
         exec(code)
@@ -23,6 +25,7 @@ def get_arguments():
     global VERSION
         
     parser.add_argument('-d', '--dbms', type=str, help="Type of dbms [mysql|mongodb]")
+    parser.add_argument('-db', '--database', default='runit', type=str, help="Name of database")
     parser.add_argument('-v','--version', action='version', version=f'%(prog)s {VERSION}')
     parser.set_defaults(func=main)
     return parser.parse_args()

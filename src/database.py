@@ -22,7 +22,7 @@ class Database():
     def initialize(dbsettings: dict, app=None):
         Database.dbms = dbsettings['dbms']
         if dbsettings['dbms'] == 'mongodb':
-            MongoDB.initialize(app, dbsettings['dbhost'], 
+            MongoDB.initialize(dbsettings['dbhost'], 
                 dbsettings['dbport'],
                 dbsettings['dbname'])
             Database.db = MongoDB
@@ -40,7 +40,8 @@ class Database():
         '''Add a model to be loaded as a database table'''
         setattr(Database.models, model.TABLE_NAME, model)
         model.Database = Database
-        model.create_table()
+        if Database.dbms == 'mysql':
+            model.create_table()
     
     @staticmethod
     def setup():
@@ -59,17 +60,17 @@ class Database():
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             );
             ''')
+
     
     @staticmethod
-    def load_defaults(dbms: Literal['mysql','mongodb'] = 'mysql'):
-        if dbms == 'mysql':
-            mysql_settings = {
-                'dbms': 'mysql',
-                'dbhost': '127.0.0.1',
-                'dbport': '3306',
-                'dbusername': 'root',
-                'dbpassword': '',
-                'dbname': 'runit'
-            }
-            
-            Database.initialize(mysql_settings)
+    def load_defaults(dbms: Literal['mysql','mongodb'], database: str = None):
+        settings = {}
+        settings['dbms'] = dbms
+        settings['dbhost'] = '127.0.0.1'
+        settings['dbport'] = 3306 if dbms == 'mysql' else 27017
+        settings['dbusername'] = 'root' if dbms == 'mysql' else ''
+        settings['dbpassword'] = ''
+        if database:
+            settings['dbname'] = database
+        print(settings)
+        Database.initialize(settings)
