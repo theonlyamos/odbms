@@ -11,6 +11,7 @@ from sys import exit
 
 class MysqlDB:
     db = None
+    dbms = 'mysql'
     cursor = None
     database_exists = True
     
@@ -29,11 +30,11 @@ class MysqlDB:
                 exit(1)
     
     @staticmethod
-    def initialize(host, port, database, user, password):
+    def initialize(host, port, username, password, database):
         dbsettings = {
             'host': host,
             'port': port,
-            'user': user,
+            'user': username,
             'password': password,
             'database': database
         }

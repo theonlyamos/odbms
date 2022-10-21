@@ -9,7 +9,8 @@ load_dotenv()
 
 class MongoDB(object):
     db = None
-
+    dbms = 'mongodb'
+    
     @staticmethod
     def initialize(host, port, database, user=None, password=None):
         client = MongoClient(host, int(port))

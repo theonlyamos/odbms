@@ -72,5 +72,5 @@ class Database():
         settings['dbpassword'] = ''
         if database:
             settings['dbname'] = database
-        print(settings)
+        
         Database.initialize(settings)

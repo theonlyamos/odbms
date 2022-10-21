@@ -1,7 +1,7 @@
 #! python
 from dotenv import load_dotenv, dotenv_values, find_dotenv
 
-from database import Database
+from dbms import DBMS
 
 import argparse
 import sys
@@ -15,7 +15,9 @@ def main(args):
         parser.print_help()
         sys.exit(1)
     if 'mysql' in args.dbms or 'mongodb' in args.dbms:
-        Database.load_defaults(args.dbms, args.database)
+        DBMS.initialize_with_defaults(args.dbms, args.database)
+        from dbms import Database
+        
     while True:
         code = input('> ')
         exec(code)
