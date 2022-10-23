@@ -1,3 +1,3 @@
-from database import Database
+from dbms import DBMS, Database
 from model import Model
 

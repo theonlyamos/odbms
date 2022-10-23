@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 
 from bson.objectid import ObjectId
-from database import Database
+from dbms import Database
 
 class Model():
     '''A model class'''
@@ -50,7 +50,7 @@ class Model():
 
         data = {}
         
-        return Database.db.insert(Model.TABLE_NAME, data)
+        return Database.insert(Model.TABLE_NAME, data)
     
     @classmethod
     def update(cls, update: dict, query={}):
@@ -62,7 +62,7 @@ class Model():
         '''
         if Database.dbms == 'mongodo':
             update['updated_at'] = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S")
-        return Database.db.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
+        return Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
     
     @classmethod
     def remove(cls, query: dict):
@@ -73,7 +73,7 @@ class Model():
         @return None
         '''
 
-        return Database.db.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
+        return Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
     
     @classmethod
     def count(cls)-> int:
@@ -84,7 +84,7 @@ class Model():
         @return int Count of Projects
         '''
 
-        return Database.db.count(cls.TABLE_NAME)
+        return Database.count(cls.TABLE_NAME)
 
     # @classmethod
     # def get(cls, id = None):
@@ -97,9 +97,9 @@ class Model():
     #     '''
 
     #     if id is None:
-    #         return [cls(**cls.normalise(elem)) for elem in Database.db.find(cls.TABLE_NAME)]
+    #         return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME)]
 
-    #     model = Database.db.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
+    #     model = Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
     #     print(model)
     #     return cls(**cls.normalise(model)) if model else None
     
@@ -125,7 +125,7 @@ class Model():
         '''
 
         if id is not None:
-            model = Database.db.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
+            model = Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
             return cls(**cls.normalise(model)) if model else None
         
         query = 'SELECT '
@@ -173,7 +173,7 @@ class Model():
         @return List[Model] instance(s)
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in Database.db.find(cls.TABLE_NAME, {})]
+        return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME, {})]
         
     @classmethod
     def find(cls, params: dict)-> list:
@@ -185,7 +185,7 @@ class Model():
         @return List[Model]
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in Database.db.find(cls.TABLE_NAME, cls.normalise(params, 'params'))]
+        return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'))]
     
     @classmethod
     def query(cls, column: str, search: str):
@@ -200,7 +200,7 @@ class Model():
         sql = f"SELECT * from {cls.TABLE_NAME} WHERE "
         sql += f"{column} LIKE '%{search}%'"
         
-        return [cls(**cls.normalise(elem)) for elem in Database.db.query(sql)]
+        return [cls(**cls.normalise(elem)) for elem in Database.query(sql)]
     
     @classmethod
     def clear(cls):

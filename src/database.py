@@ -9,9 +9,6 @@ from typing import Type, Literal
 from mongodb import MongoDB
 from mysqldb import MysqlDB
 
-class Models(object):
-    def __init__(self):
-        pass
 
 class Database():
     db: Type[MysqlDB]|Type[MongoDB]|None = None
