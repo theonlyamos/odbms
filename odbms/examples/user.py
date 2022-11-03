@@ -6,7 +6,7 @@ from bson.objectid import ObjectId
 
 from utils import Utils
 from model import Model
-from dbms import Database
+from odbms import Database
 
 
 class User(Model):
@@ -28,10 +28,12 @@ class User(Model):
         @return Database query result
         '''
         
+        AUTO_INCREMENT = 'AUTO_INCREMENT' if Database.dbms == 'mysql' else 'AUTOINCREMENT'
+        INT = 'INT' if Database.dbms == 'mysql' else 'INTEGER'
         return Database.query(f'''
             CREATE TABLE IF NOT EXISTS {User.TABLE_NAME}
             (
-            id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            id {INT} NOT NULL PRIMARY KEY {AUTO_INCREMENT} ,
             name varchar(50) not null,
             email varchar(100) not null,
             password varchar(500) not null,

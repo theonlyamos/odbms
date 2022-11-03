@@ -6,14 +6,15 @@
 # @Version : 1.0.0
 
 from typing import Type, Literal
-from mongodb import MongoDB
-from mysqldb import MysqlDB
+from .mongodb import MongoDB
+from .mysqldb import MysqlDB
+from .sqlitedb import SqliteDB
 
 Database: Type[MongoDB]|Type[MysqlDB]|None = None
 
 class DBMS(object):
     @staticmethod
-    def initialize(dbms: Literal['mysql', 'mongodb'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
+    def initialize(dbms: Literal['mysql', 'mongodb'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = '')-> Type[Database]:
         '''
         Static method for select and connecting \n 
         to specified database system.
@@ -36,7 +37,13 @@ class DBMS(object):
         elif dbms == 'mysql':
             MysqlDB.initialize(host, port, username, password, database)
             Database = MysqlDB
-    
+        
+        elif dbms == 'sqlite':
+            SqliteDB.initialize(database)
+            Database = SqliteDB
+        
+        return Database
+            
     @staticmethod
     def initialize_with_defaults(dbms, database):
         settings = {}
@@ -47,6 +54,6 @@ class DBMS(object):
         settings['password'] = ''
         if database:
             settings['database'] = database
-
-        DBMS.initialize(**settings)
+        
+        return DBMS.initialize(**settings)
     

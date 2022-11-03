@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS users
+(
+id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT ,
+name varchar(50) not null,
+email varchar(100) not null,
+password varchar(500) not null,
+created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

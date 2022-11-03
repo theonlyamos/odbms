@@ -6,8 +6,8 @@
 # @Version : 1.0.0
 
 from typing import Type, Literal
-from mongodb import MongoDB
-from mysqldb import MysqlDB
+from .mongodb import MongoDB
+from .mysqldb import MysqlDB
 
 
 class Database():
@@ -37,8 +37,6 @@ class Database():
         '''Add a model to be loaded as a database table'''
         setattr(Database.models, model.TABLE_NAME, model)
         model.Database = Database
-        if Database.dbms == 'mysql':
-            model.create_table()
     
     @staticmethod
     def setup():

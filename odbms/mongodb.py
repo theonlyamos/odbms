@@ -1,5 +1,4 @@
 from pymongo import MongoClient
-from flask import Flask
 
 import os
 from dotenv import load_dotenv
@@ -17,30 +16,30 @@ class MongoDB(object):
         MongoDB.db = client[database]
 
     @staticmethod
-    def insert(collection, data):
+    def insert(collection: str, data: dict):
         return MongoDB.db[collection].insert_one(data)
 
     @staticmethod
-    def find(collection, query):
+    def find(collection: str, query: dict = {}):
         return MongoDB.db[collection].find(query)
 
     @staticmethod
-    def find_one(collection, query):
+    def find_one(collection: str, query: dict = {}):
         return MongoDB.db[collection].find_one(query)
 
     @staticmethod
-    def remove(collection, query):
+    def remove(collection: str, query: dict):
         return MongoDB.db[collection].delete_many(query)
 
     @staticmethod
-    def update(collection, query, data):
+    def update(collection: str, query: dict, data: dict):
         return MongoDB.db[collection].update_one(query, {'$set': data}, upsert=True)
     
     @staticmethod
-    def update_many(collection, query, data):
+    def update_many(collection: str, query: dict, data: dict):
         return MongoDB.db[collection].update_many(query, {'$set': data}, upsert=True)
     
     @staticmethod
-    def count(collection, query: dict = {})->int:
+    def count(collection: str, query: dict = {})->int:
         return MongoDB.db[collection].count_documents(query)
 

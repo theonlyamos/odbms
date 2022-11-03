@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 
 from bson.objectid import ObjectId
-from dbms import Database
+from .dbms import Database
 
 class Model():
     '''A model class'''

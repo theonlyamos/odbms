@@ -56,7 +56,7 @@ class MysqlDB:
         query += "','".join(values)
         query += "')"
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query)
             MysqlDB.db.commit()
 
             return str(MysqlDB.cursor.lastrowid)
@@ -69,17 +69,19 @@ class MysqlDB:
 
         query = f'UPDATE {table} SET'
         for key in data.keys():
-            query += f" {key}='{data[key]}',"
-        
+            query += f" {key}= ?,"
         query = query.rstrip(',')
         
-        query += f" WHERE "
-        for key, value in params.items():
-            query += f"{key}='{value}',"
-        query = query.rstrip(',')
+        if len(params.keys()):
+            query += ' WHERE '
+            for key, value in params.items():
+                query += f"{key} = ?,"
+            query = query.rstrip(',')
+        
+        parameters = list(data.values())+list(params.values())
 
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(parameters))
             MysqlDB.db.commit()
 
             return str(MysqlDB.cursor.lastrowid)
@@ -90,15 +92,15 @@ class MysqlDB:
     @staticmethod
     def find(table: str, params: dict = {}):
         query = f'SELECT * FROM {table}'
-
+        
         if len(params.keys()):
             query += ' WHERE '
             for key, value in params.items():
-                query += f"{key}='{value}',"
+                query += f"{key} = ?,"
             query = query.rstrip(',')
-        
+
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(params.values()))
             MysqlDB.db.commit()
 
             return [x for x in MysqlDB.cursor.fetchall()]
@@ -113,15 +115,14 @@ class MysqlDB:
         if len(params.keys()):
             query += ' WHERE '
             for key, value in params.items():
-                query += f"{key}='{value}',"
+                query += f"{key}= ?,"
             query = query.rstrip(',')
         
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(params.values()))
             MysqlDB.db.commit()
 
-            resp = [x for x in MysqlDB.cursor.fetchall()]
-            return resp[0]
+            return MysqlDB.cursor.fetchone()
 
         except Exception as e:
             return {'status': 'Error', 'message': str(e)}
@@ -133,11 +134,11 @@ class MysqlDB:
         if len(params.keys()):
             query += ' WHERE '
             for key, value in params.items():
-                query += f"{key}='{value}',"
+                query += f"{key} = ?,"
             query = query.rstrip(',')
 
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(params.values()))
             MysqlDB.db.commit()
 
             return MysqlDB.cursor.rowcount
@@ -146,11 +147,17 @@ class MysqlDB:
             return {'status': 'Error', 'message': str(e)}
     
     @staticmethod
-    def sum(table: str, column: str):
+    def sum(table: str, column: str, params: dict = {}):
         query = f'SELECT SUM({column}) as sum FROM {table}'
         
+        if len(params.keys()):
+            query += ' WHERE '
+            for key, value in params.items():
+                query += f"{key} = ?,"
+            query = query.rstrip(',')
+        
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(params.values()))
             MysqlDB.db.commit()
 
             return MysqlDB.cursor.fetchall()[0]['sum']
@@ -161,7 +168,7 @@ class MysqlDB:
     @staticmethod
     def query(query: str):
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query)
             MysqlDB.db.commit()
 
             return [x for x in MysqlDB.cursor.fetchall()]
@@ -171,17 +178,57 @@ class MysqlDB:
     
     @staticmethod
     def remove(table: str, params: dict):
-
         query = f'DELETE FROM {table} WHERE '
-        for key, value in params.items():
-            query += f"{key}='{value}',"
-        query = query.rstrip(',')
+        
+        if len(params.keys()):
+            query += ' WHERE '
+            for key, value in params.items():
+                query += f"{key} = ?,"
+            query = query.rstrip(',')
         
         try:
-            MysqlDB.cursor.execute(query, None)
+            MysqlDB.cursor.execute(query, tuple(params.values()))
             MysqlDB.db.commit()
 
             return str(MysqlDB.cursor.lastrowid)
 
+        except Exception as e:
+            return {'status': 'Error', 'message': str(e)}
+    
+    @staticmethod
+    def delete(table: str, params: dict):
+        query = f'DELETE FROM {table} WHERE '
+        
+        if len(params.keys()):
+            query += ' WHERE '
+            for key, value in params.items():
+                query += f"{key} = ?,"
+            query = query.rstrip(',')
+        
+        try:
+            MysqlDB.cursor.execute(query, tuple(params.values()))
+            MysqlDB.db.commit()
+
+            return str(MysqlDB.cursor.lastrowid)
+
+        except Exception as e:
+            return {'status': 'Error', 'message': str(e)}
+            
+    @staticmethod
+    def import_from_file(filename: str):
+        '''
+        Run Database command from file
+        
+        @param filename Name of file containing commands
+        @return Database result
+        '''
+
+        try:
+            result = None
+            with open(filename, 'rt') as file:
+                result = MysqlDB.query(file.read())
+                
+            return result
+                
         except Exception as e:
             return {'status': 'Error', 'message': str(e)}
