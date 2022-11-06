@@ -20,26 +20,26 @@ class MongoDB(object):
         return MongoDB.db[collection].insert_one(data)
 
     @staticmethod
-    def find(collection: str, query: dict = {}):
-        return MongoDB.db[collection].find(query)
+    def find(collection: str, filter: dict = {}, projection: list = []):
+        return MongoDB.db[collection].find(filter)
 
     @staticmethod
-    def find_one(collection: str, query: dict = {}):
-        return MongoDB.db[collection].find_one(query)
+    def find_one(collection: str, filter: dict = {}, projection: list = []):
+        return MongoDB.db[collection].find_one(filter, projection)
 
     @staticmethod
-    def remove(collection: str, query: dict):
-        return MongoDB.db[collection].delete_many(query)
+    def remove(collection: str, filter: dict):
+        return MongoDB.db[collection].delete_many(filter)
 
     @staticmethod
-    def update(collection: str, query: dict, data: dict):
-        return MongoDB.db[collection].update_one(query, {'$set': data}, upsert=True)
+    def update(collection: str, filter: dict, data: dict):
+        return MongoDB.db[collection].update_one(filter, {'$set': data}, upsert=True)
     
     @staticmethod
-    def update_many(collection: str, query: dict, data: dict):
-        return MongoDB.db[collection].update_many(query, {'$set': data}, upsert=True)
+    def update_many(collection: str, filter: dict, data: dict):
+        return MongoDB.db[collection].update_many(filter, {'$set': data}, upsert=True)
     
     @staticmethod
-    def count(collection: str, query: dict = {})->int:
-        return MongoDB.db[collection].count_documents(query)
+    def count(collection: str, filter: dict = {})->int:
+        return MongoDB.db[collection].count_documents(filter)
 

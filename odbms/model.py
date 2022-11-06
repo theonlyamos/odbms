@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 
 from bson.objectid import ObjectId
-from .dbms import Database
+from .dbms import DBMS
 
 class Model():
     '''A model class'''
@@ -12,7 +12,6 @@ class Model():
     GROUP_BY = ''
     ORDER_BY = ()
     LIMIT = 0
-    Database = None
 
     def __init__(self, created_at=None, updated_at=None, id=None):
         self.created_at = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S") \
@@ -50,7 +49,7 @@ class Model():
 
         data = {}
         
-        return Database.insert(Model.TABLE_NAME, data)
+        return DBMS.Database.insert(Model.TABLE_NAME, data)
     
     @classmethod
     def update(cls, update: dict, query={}):
@@ -60,9 +59,9 @@ class Model():
         @param update Content to be update in dictionary format
         @return None
         '''
-        if Database.dbms == 'mongodo':
+        if DBMS.Database.dbms == 'mongodo':
             update['updated_at'] = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S")
-        return Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
+        return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
     
     @classmethod
     def remove(cls, query: dict):
@@ -73,7 +72,7 @@ class Model():
         @return None
         '''
 
-        return Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
+        return DBMS.Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
     
     @classmethod
     def count(cls)-> int:
@@ -84,7 +83,7 @@ class Model():
         @return int Count of Projects
         '''
 
-        return Database.count(cls.TABLE_NAME)
+        return DBMS.Database.count(cls.TABLE_NAME)
 
     # @classmethod
     # def get(cls, id = None):
@@ -97,9 +96,9 @@ class Model():
     #     '''
 
     #     if id is None:
-    #         return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME)]
+    #         return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME)]
 
-    #     model = Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
+    #     model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
     #     print(model)
     #     return cls(**cls.normalise(model)) if model else None
     
@@ -112,7 +111,7 @@ class Model():
         @params None
         @return int Sum of column
         '''
-        return Database.sum(cls.TABLE_NAME, column)
+        return DBMS.Database.sum(cls.TABLE_NAME, column)
 
     @classmethod
     def get(cls, id = None):
@@ -125,7 +124,7 @@ class Model():
         '''
 
         if id is not None:
-            model = Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
+            model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
             return cls(**cls.normalise(model)) if model else None
         
         query = 'SELECT '
@@ -161,7 +160,7 @@ class Model():
         
         cls.clear()
         
-        return Database.query(query)
+        return DBMS.Database.query(query)
     
     @classmethod
     def all(cls)->list:
@@ -173,7 +172,7 @@ class Model():
         @return List[Model] instance(s)
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME, {})]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, {})]
         
     @classmethod
     def find(cls, params: dict)-> list:
@@ -185,7 +184,7 @@ class Model():
         @return List[Model]
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'))]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'))]
     
     @classmethod
     def query(cls, column: str, search: str):
@@ -200,7 +199,7 @@ class Model():
         sql = f"SELECT * from {cls.TABLE_NAME} WHERE "
         sql += f"{column} LIKE '%{search}%'"
         
-        return [cls(**cls.normalise(elem)) for elem in Database.query(sql)]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.query(sql)]
     
     @classmethod
     def clear(cls):
@@ -301,7 +300,7 @@ class Model():
         @return Dict|List[List] of normalized content
         '''
         normalized = {}
-        if Database.dbms == 'mongodb':
+        if DBMS.Database.dbms == 'mongodb':
             if optype == 'dbresult':
                 elem = dict(content)
                 elem['id'] = str(elem['_id'])

@@ -10,11 +10,47 @@ from .mongodb import MongoDB
 from .mysqldb import MysqlDB
 from .sqlitedb import SqliteDB
 
-Database: Type[MongoDB]|Type[MysqlDB]|None = None
+from bson.objectid import ObjectId
+
+def normalise(content: dict, optype: str = 'dbresult')-> dict:
+    '''
+    Static method of normalising database results\n
+    Converts _id from mongodb to id
+
+    @param optype str type of operation: dbresult or params
+    @param content Dict|List[Dict] Database result
+    @return Dict|List[List] of normalized content
+    '''
+    normalized = {}
+    if DBMS.Database.dbms == 'mongodb':
+        if optype == 'dbresult':
+            elem = dict(content)
+            elem['id'] = str(elem['_id'])
+            del elem['_id']
+            for key in elem.keys():
+                if key.endswith('_id'):
+                    elem[key] = str(elem[key])
+            normalized =  elem
+            
+        else:
+            if 'id' in content.keys():
+                content['_id'] = ObjectId(content['id'])
+                del content['id']
+            for key in content.keys():
+                if key.endswith('_id'):
+                    content[key] = ObjectId(content[key])
+            for key, value in content.items():
+                if type(value) == list:
+                    content[key] = '::'.join([str(v) for v in value])
+            normalized = content
+        return normalized
+    return content
 
 class DBMS(object):
+    Database: Type[MongoDB]|Type[MysqlDB]|None = None
+    
     @staticmethod
-    def initialize(dbms: Literal['mysql', 'mongodb'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = '')-> Type[Database]:
+    def initialize(dbms: Literal['mysql', 'mongodb'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
         '''
         Static method for select and connecting \n 
         to specified database system.
@@ -32,17 +68,15 @@ class DBMS(object):
         
         if dbms == 'mongodb':
             MongoDB.initialize(host, port, database)
-            Database = MongoDB
+            DBMS.Database = MongoDB
             
         elif dbms == 'mysql':
             MysqlDB.initialize(host, port, username, password, database)
-            Database = MysqlDB
+            DBMS.Database = MysqlDB
         
         elif dbms == 'sqlite':
             SqliteDB.initialize(database)
-            Database = SqliteDB
-        
-        return Database
+            DBMS.Database = SqliteDB
             
     @staticmethod
     def initialize_with_defaults(dbms, database):
@@ -55,5 +89,5 @@ class DBMS(object):
         if database:
             settings['database'] = database
         
-        return DBMS.initialize(**settings)
+        DBMS.initialize(**settings)
     

@@ -4,9 +4,7 @@ import uuid
 
 from bson.objectid import ObjectId
 
-from utils import Utils
-from model import Model
-from odbms import Database
+from odbms import DBMS, Model
 
 
 class User(Model):
@@ -28,9 +26,9 @@ class User(Model):
         @return Database query result
         '''
         
-        AUTO_INCREMENT = 'AUTO_INCREMENT' if Database.dbms == 'mysql' else 'AUTOINCREMENT'
-        INT = 'INT' if Database.dbms == 'mysql' else 'INTEGER'
-        return Database.query(f'''
+        AUTO_INCREMENT = 'AUTO_INCREMENT' if DBMS.Database.dbms == 'mysql' else 'AUTOINCREMENT'
+        INT = 'INT' if DBMS.Database.dbms == 'mysql' else 'INTEGER'
+        return DBMS.Database.query(f'''
             CREATE TABLE IF NOT EXISTS {User.TABLE_NAME}
             (
             id {INT} NOT NULL PRIMARY KEY {AUTO_INCREMENT} ,
@@ -56,11 +54,11 @@ class User(Model):
             "password": Utils.hash_password(self.password)
         }
 
-        if Database.dbms == 'mongodb':
+        if DBMS.Database.dbms == 'mongodb':
             data["created_at"] = self.created_at
             data["updated_at"] = self.updated_at
 
-        return Database.insert(User.TABLE_NAME, data)
+        return DBMS.Database.insert(User.TABLE_NAME, data)
     
     def reset_password(self, new_password: str):
         '''
@@ -70,7 +68,7 @@ class User(Model):
         @return None
         '''
 
-        Database.update(User.TABLE_NAME, User.normalise({'id': self.id}, 'params'), {'password': new_password})
+        DBMS.Database.update(User.TABLE_NAME, User.normalise({'id': self.id}, 'params'), {'password': new_password})
     
     def json(self)-> dict:
         '''
@@ -96,5 +94,5 @@ class User(Model):
         @param email email address of the user 
         @return User instance
         '''
-        user = Database.find_one(User.TABLE_NAME, {"email": email})
+        user = DBMS.Database.find_one(User.TABLE_NAME, {"email": email})
         return cls(**Model.normalise(user)) if user else None

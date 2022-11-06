@@ -15,8 +15,8 @@ def main(args):
         parser.print_help()
         sys.exit(1)
     if 'mysql' in args.dbms or 'mongodb' in args.dbms or 'sqlite' in args.dbms:
-        Database = DBMS.initialize_with_defaults(args.dbms, args.database)
-        # from odbms import Database
+        DBMS.initialize_with_defaults(args.dbms, args.database)
+        Database = DBMS.Database
         
     while True:
         code = input('> ')
