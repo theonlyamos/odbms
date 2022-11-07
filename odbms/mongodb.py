@@ -21,7 +21,7 @@ class MongoDB(object):
 
     @staticmethod
     def find(collection: str, filter: dict = {}, projection: list = []):
-        return MongoDB.db[collection].find(filter)
+        return MongoDB.db[collection].find(filter, projection)
 
     @staticmethod
     def find_one(collection: str, filter: dict = {}, projection: list = []):
