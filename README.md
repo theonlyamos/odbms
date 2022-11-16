@@ -1,2 +1,8 @@
 # odbms
- Packaging for Managing both Mysql and Mongodb
+Python package for Managing both Mysql and Mongodb
+
+## Installation
+
+```shell
+pip install odbms
+```
