@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 
 setup(
     name='odbms',
@@ -12,14 +12,14 @@ setup(
     long_description='Connect to all kinds of databases from your application',
     packages=find_packages(),
     include_package_data=True,
-    install_requires=['python-dotenv','pymongo','mysql'],
-    keywords='python3 runit developer serverless architecture docker',
+    install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],
+    keywords='python3 runit developer serverless architecture docker mysql mongodb',
     project_urls={
         'Source': 'https://github.com/theonlyamos/odbms/',
         'Tracker': 'https://github.com/theonlyamos/odbms/issues',
     },
     classifiers=[
-        'Development Status :: 1 - Alpha',
+        'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Build Tools',
         'License :: OSI Approved :: MIT License',

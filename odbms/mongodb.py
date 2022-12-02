@@ -12,7 +12,10 @@ class MongoDB(object):
     
     @staticmethod
     def initialize(host, port, database, user=None, password=None):
-        client = MongoClient(host, int(port))
+        if port:
+            client = MongoClient(host, int(port))
+        else:
+            client = MongoClient(host)
         MongoDB.db = client[database]
 
     @staticmethod
@@ -30,6 +33,11 @@ class MongoDB(object):
     @staticmethod
     def remove(collection: str, filter: dict):
         return MongoDB.db[collection].delete_many(filter)
+
+    @staticmethod
+    def delete(collection: str, filter: dict):
+        return MongoDB.db[collection].delete_many(filter)
+
 
     @staticmethod
     def update(collection: str, filter: dict, data: dict):
