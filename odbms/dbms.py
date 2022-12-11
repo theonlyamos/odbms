@@ -50,7 +50,7 @@ class DBMS(object):
     Database: Type[MongoDB]|Type[MysqlDB]|None = None
     
     @staticmethod
-    def initialize(dbms: Literal['mysql', 'mongodb'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
+    def initialize(dbms: Literal['mysql', 'mongodb', 'sqlite'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
         '''
         Static method for select and connecting \n 
         to specified database system.
@@ -90,4 +90,3 @@ class DBMS(object):
             settings['database'] = database
         
         DBMS.initialize(**settings)
-    

@@ -1,5 +1,5 @@
 # odbms
-Python package for Managing both Mysql and Mongodb
+Python package for Managing Mysql, Mongodb and Sqlite instances
 
 ## Installation
 

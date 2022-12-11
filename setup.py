@@ -1,7 +1,10 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.2.1'
+VERSION = '0.2.2'
+
+with open('README.md', 'rt') as file:
+    description = file.read()
 
 setup(
     name='odbms',
@@ -9,7 +12,7 @@ setup(
     author='Amos Amissah',
     author_email='theonlyamos@gmail.com',
     description='Database client for Mysql, MongoDB and Sqlite',
-    long_description='Connect to all kinds of databases from your application',
+    long_description=description,
     packages=find_packages(),
     include_package_data=True,
     install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],

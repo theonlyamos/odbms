@@ -52,14 +52,14 @@ class Model():
         return DBMS.Database.insert(Model.TABLE_NAME, data)
     
     @classmethod
-    def update(cls, update: dict, query={}):
+    def update(cls, query={}, update: dict):
         '''
         Class Method for updating model in database
 
         @param update Content to be update in dictionary format
         @return None
         '''
-        if DBMS.Database.dbms == 'mongodo':
+        if DBMS.Database.dbms == 'mongodb':
             update['updated_at'] = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S")
         return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
     
@@ -287,7 +287,7 @@ class Model():
         @return dict() format of Function instance
         '''
 
-        return {}
+        return self.__dict__
     
     @classmethod
     def normalise(cls, content: dict, optype: str = 'dbresult')-> dict:
@@ -299,6 +299,7 @@ class Model():
         @param content Dict|List[Dict] Database result
         @return Dict|List[List] of normalized content
         '''
+
         normalized = {}
         if DBMS.Database.dbms == 'mongodb':
             if optype == 'dbresult':
