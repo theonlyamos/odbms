@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Union
 import uuid
 
 from bson.objectid import ObjectId
@@ -52,7 +53,7 @@ class Model():
         return DBMS.Database.insert(Model.TABLE_NAME, data)
     
     @classmethod
-    def update(cls, query={}, update: dict):
+    def update(cls, query: dict ={}, update: dict = {}):
         '''
         Class Method for updating model in database
 
@@ -175,7 +176,7 @@ class Model():
         return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, {})]
         
     @classmethod
-    def find(cls, params: dict)-> list:
+    def find(cls, params: dict, projection: Union[list,dict] = [])-> list:
         '''
         Class Method for retrieving models
         by provided parameters
@@ -184,7 +185,19 @@ class Model():
         @return List[Model]
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'))]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)]
+    
+    @classmethod
+    def find_one(cls, params: dict, projection: Union[list,dict] = []):
+        '''
+        Class Method for retrieving one model
+        imstance by provided parameters
+
+        @param params
+        @return List[Model]
+        '''
+
+        return cls(**DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))
     
     @classmethod
     def query(cls, column: str, search: str):

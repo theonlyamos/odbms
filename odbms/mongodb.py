@@ -1,6 +1,7 @@
 from pymongo import MongoClient
 
 import os
+from typing import Union
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -23,11 +24,11 @@ class MongoDB(object):
         return MongoDB.db[collection].insert_one(data)
 
     @staticmethod
-    def find(collection: str, filter: dict = {}, projection: list = []):
+    def find(collection: str, filter: dict = {}, projection: Union[list,dict] = []):
         return MongoDB.db[collection].find(filter, projection)
 
     @staticmethod
-    def find_one(collection: str, filter: dict = {}, projection: list = []):
+    def find_one(collection: str, filter: dict = {}, projection: Union[list,dict] = []):
         return MongoDB.db[collection].find_one(filter, projection)
 
     @staticmethod

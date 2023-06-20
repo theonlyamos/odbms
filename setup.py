@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.2.2'
+VERSION = '0.2.3'
 
 with open('README.md', 'rt') as file:
     description = file.read()
@@ -14,6 +14,7 @@ setup(
     description='Database client for Mysql, MongoDB and Sqlite',
     long_description=description,
     packages=find_packages(),
+    long_description_content_type = "text/markdown",
     include_package_data=True,
     install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],
     keywords='python3 runit developer serverless architecture docker mysql mongodb',
