@@ -5,9 +5,9 @@
 # @Link    : link
 # @Version : 1.0.0
 
-from typing import Type, Literal
+from typing import Type, Literal, Union
 from .mongodb import MongoDB
-from .mysqldb import MysqlDB
+# from .mysqldb import MysqlDB
 from .sqlitedb import SqliteDB
 
 from bson.objectid import ObjectId
@@ -46,8 +46,9 @@ def normalise(content: dict, optype: str = 'dbresult')-> dict:
         return normalized
     return content
 
-class DBMS(object):
-    Database: Type[MongoDB]|Type[MysqlDB]|None = None
+class DBMS():
+    # Database: Type[MongoDB]|Type[MysqlDB]|None = None
+    Database: Union[MongoDB,SqliteDB,None] = None
     
     @staticmethod
     def initialize(dbms: Literal['mysql', 'mongodb', 'sqlite'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
@@ -70,9 +71,9 @@ class DBMS(object):
             MongoDB.initialize(host, port, database)
             DBMS.Database = MongoDB
             
-        elif dbms == 'mysql':
-            MysqlDB.initialize(host, port, username, password, database)
-            DBMS.Database = MysqlDB
+        # elif dbms == 'mysql':
+        #     MysqlDB.initialize(host, port, username, password, database)
+        #     DBMS.Database = MysqlDB
         
         elif dbms == 'sqlite':
             SqliteDB.initialize(database)

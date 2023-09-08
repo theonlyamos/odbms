@@ -24,6 +24,10 @@ class MongoDB(object):
         return MongoDB.db[collection].insert_one(data)
 
     @staticmethod
+    def insert_many(collection: str, data: dict):
+        return MongoDB.db[collection].insert_many(data)
+
+    @staticmethod
     def find(collection: str, filter: dict = {}, projection: Union[list,dict] = []):
         return MongoDB.db[collection].find(filter, projection)
 
@@ -42,6 +46,7 @@ class MongoDB(object):
 
     @staticmethod
     def update(collection: str, filter: dict, data: dict):
+        print(filter)
         return MongoDB.db[collection].update_one(filter, {'$set': data}, upsert=True)
     
     @staticmethod

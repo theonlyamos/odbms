@@ -51,6 +51,19 @@ class Model():
         data = {}
         
         return DBMS.Database.insert(Model.TABLE_NAME, data)
+
+    @staticmethod
+    def insert_many(documents):
+        '''
+        Static Method for saving documents into database
+
+        @param documents Data to be saved
+        @return Mongodb InsertManyResult
+        '''
+
+        data = {}
+        
+        return DBMS.Database.insert_many(Model.TABLE_NAME, documents)
     
     @classmethod
     def update(cls, query: dict ={}, update: dict = {}):
@@ -60,6 +73,9 @@ class Model():
         @param update Content to be update in dictionary format
         @return None
         '''
+        if 'id' in update.keys():
+            del update['id']
+
         if DBMS.Database.dbms == 'mongodb':
             update['updated_at'] = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S")
         return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
@@ -67,24 +83,24 @@ class Model():
     @classmethod
     def remove(cls, query: dict):
         '''
-        Class Method for updating model in database
+        Class Method for deleting document in database
 
-        @param update Content to be updated in as dictionary
+        @param query filter parameters
         @return None
         '''
 
         return DBMS.Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
     
     @classmethod
-    def count(cls)-> int:
+    def count(cls, query: dict = {})-> int:
         '''
-        Class Method for counting Model Projects
+        Class Method for counting documents in collection
 
-        @params None
+        @params query Filter dictionary
         @return int Count of Projects
         '''
 
-        return DBMS.Database.count(cls.TABLE_NAME)
+        return DBMS.Database.count(cls.TABLE_NAME, cls.normalise(query, 'params'))
 
     # @classmethod
     # def get(cls, id = None):
@@ -197,7 +213,7 @@ class Model():
         @return List[Model]
         '''
 
-        return cls(**DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))
+        return cls(**cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)))
     
     @classmethod
     def query(cls, column: str, search: str):

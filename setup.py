@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.2.3'
+VERSION = '0.2.4'
 
 with open('README.md', 'rt') as file:
     description = file.read()
@@ -16,8 +16,9 @@ setup(
     packages=find_packages(),
     long_description_content_type = "text/markdown",
     include_package_data=True,
-    install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],
-    keywords='python3 runit developer serverless architecture docker mysql mongodb',
+    # install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],
+    install_requires=['python-dotenv','pymongo'],
+    keywords='python3 runit developer serverless architecture docker sqlite mysql mongodb',
     project_urls={
         'Source': 'https://github.com/theonlyamos/odbms/',
         'Tracker': 'https://github.com/theonlyamos/odbms/issues',
