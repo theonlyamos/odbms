@@ -1,4 +1,5 @@
 from pymongo import MongoClient
+from pymongo.database import Database
 
 import os
 from typing import Union
@@ -8,7 +9,7 @@ load_dotenv()
 
 
 class MongoDB(object):
-    db = None
+    db: Database
     dbms = 'mongodb'
     
     @staticmethod
@@ -32,7 +33,7 @@ class MongoDB(object):
         return MongoDB.db[collection].find(filter, projection)
 
     @staticmethod
-    def find_one(collection: str, filter: dict = {}, projection: Union[list,dict] = []):
+    def find_one(collection: str, filter: dict = {}, projection: Union[list,dict] = [])-> dict|None:
         return MongoDB.db[collection].find_one(filter, projection)
 
     @staticmethod
@@ -43,10 +44,8 @@ class MongoDB(object):
     def delete(collection: str, filter: dict):
         return MongoDB.db[collection].delete_many(filter)
 
-
     @staticmethod
     def update(collection: str, filter: dict, data: dict):
-        print(filter)
         return MongoDB.db[collection].update_one(filter, {'$set': data}, upsert=True)
     
     @staticmethod
@@ -56,4 +55,8 @@ class MongoDB(object):
     @staticmethod
     def count(collection: str, filter: dict = {})->int:
         return MongoDB.db[collection].count_documents(filter)
+
+    @staticmethod
+    def sum(table: str, column: str, params: dict = {})-> int:
+        return 0
 

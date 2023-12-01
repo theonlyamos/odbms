@@ -19,7 +19,7 @@ class Model():
             if not created_at else created_at
         self.updated_at = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S") \
             if not updated_at else updated_at
-        self.id = uuid.uuid4() if not id else str(id)
+        self.id = str(uuid.uuid4()) if not id else str(id)
     
     @classmethod
     def create_table(cls):
@@ -92,7 +92,7 @@ class Model():
         return DBMS.Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
     
     @classmethod
-    def count(cls, query: dict = {})-> int:
+    def count(cls, query: dict = {})-> int|None:
         '''
         Class Method for counting documents in collection
 
@@ -133,51 +133,51 @@ class Model():
     @classmethod
     def get(cls, id = None):
         '''
-        Class Method for retrieving model \n
+        Class Method for retrieving \n
         model data from database
 
         @param _id ID of Model
-        @return List[Model] instance(s)
+        @return Model instance(s)
         '''
 
         if id is not None:
             model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
             return cls(**cls.normalise(model)) if model else None
         
-        query = 'SELECT '
-        if cls.SELECTED_COLUMNS:
-            query += cls.SELECTED_COLUMNS if type(cls.SELECTED_COLUMNS) is str \
-                else ', '.join(cls.SELECTED_COLUMNS)
-        else:
-            query += "*"
+        # query = 'SELECT '
+        # if cls.SELECTED_COLUMNS:
+        #     query += cls.SELECTED_COLUMNS if type(cls.SELECTED_COLUMNS) is str \
+        #         else ', '.join(cls.SELECTED_COLUMNS)
+        # else:
+        #     query += "*"
         
-        query += f" FROM {cls.TABLE_NAME}"
+        # query += f" FROM {cls.TABLE_NAME}"
 
-        if len(cls.WHERE_CLAUSE):
-            query += " WHERE"
-            for clause in cls.WHERE_CLAUSE:
-                if type(clause) is str:
-                    query += f" ({clause}) AND"
-                elif type(clause) is dict:
-                    query += ' ('
-                    for key, value in clause.items():
-                        query += f"{key}='{value}' AND "
-                    query = query.rstrip('AND ').strip()
-                    query += ') AND'
+        # if len(cls.WHERE_CLAUSE):
+        #     query += " WHERE"
+        #     for clause in cls.WHERE_CLAUSE:
+        #         if type(clause) is str:
+        #             query += f" ({clause}) AND"
+        #         elif type(clause) is dict:
+        #             query += ' ('
+        #             for key, value in clause.items():
+        #                 query += f"{key}='{value}' AND "
+        #             query = query.rstrip('AND ').strip()
+        #             query += ') AND'
         
-        query = query.rstrip('AND').strip()
-        if cls.GROUP_BY:
-            query += f" GROUP BY {cls.GROUP_BY}"
+        # query = query.rstrip('AND').strip()
+        # if cls.GROUP_BY:
+        #     query += f" GROUP BY {cls.GROUP_BY}"
         
-        if len(cls.ORDER_BY):
-            query += f" ORDER BY {cls.ORDER_BY[0]} {cls.ORDER_BY[1]}"
+        # if len(cls.ORDER_BY):
+        #     query += f" ORDER BY {cls.ORDER_BY[0]} {cls.ORDER_BY[1]}" # type: ignore
         
-        if cls.LIMIT:
-            query += f" LIMIT {cls.LIMIT}"
+        # if cls.LIMIT:
+        #     query += f" LIMIT {cls.LIMIT}"
         
-        cls.clear()
+        # cls.clear()
         
-        return DBMS.Database.query(query)
+        # return DBMS.Database.query(query)
     
     @classmethod
     def all(cls)->list:
@@ -189,7 +189,7 @@ class Model():
         @return List[Model] instance(s)
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, {})]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, {}) if elem] # type: ignore
         
     @classmethod
     def find(cls, params: dict, projection: Union[list,dict] = [])-> list:
@@ -201,7 +201,7 @@ class Model():
         @return List[Model]
         '''
 
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)]
+        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)] # type: ignore
     
     @classmethod
     def find_one(cls, params: dict, projection: Union[list,dict] = []):
@@ -213,7 +213,7 @@ class Model():
         @return List[Model]
         '''
 
-        return cls(**cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)))
+        return cls(**cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))) # type: ignore
     
     @classmethod
     def query(cls, column: str, search: str):
@@ -224,11 +224,13 @@ class Model():
         @param name
         @return Product Instance
         '''
-
-        sql = f"SELECT * from {cls.TABLE_NAME} WHERE "
-        sql += f"{column} LIKE '%{search}%'"
+        if DBMS.Database.dbms != 'mongodb':
+            sql = f"SELECT * from {cls.TABLE_NAME} WHERE "
+            sql += f"{column} LIKE '%{search}%'"
+            
+            return [cls(**cls.normalise(elem)) for elem in DBMS.Database.query(sql) if elem] # type: ignore
         
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.query(sql)]
+        return None
     
     @classmethod
     def clear(cls):
@@ -319,7 +321,7 @@ class Model():
         return self.__dict__
     
     @classmethod
-    def normalise(cls, content: dict, optype: str = 'dbresult')-> dict:
+    def normalise(cls, content: dict|None, optype: str = 'dbresult')-> dict:
         '''
         Static method of normalising database results\n
         Converts _id from mongodb to id
@@ -328,6 +330,9 @@ class Model():
         @param content Dict|List[Dict] Database result
         @return Dict|List[List] of normalized content
         '''
+        
+        if content is None:
+            return {}
 
         normalized = {}
         if DBMS.Database.dbms == 'mongodb':

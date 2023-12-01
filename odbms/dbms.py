@@ -48,7 +48,7 @@ def normalise(content: dict, optype: str = 'dbresult')-> dict:
 
 class DBMS():
     # Database: Type[MongoDB]|Type[MysqlDB]|None = None
-    Database: Union[MongoDB,SqliteDB,None] = None
+    Database: Union[MongoDB,SqliteDB]
     
     @staticmethod
     def initialize(dbms: Literal['mysql', 'mongodb', 'sqlite'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
@@ -69,7 +69,7 @@ class DBMS():
         
         if dbms == 'mongodb':
             MongoDB.initialize(host, port, database)
-            DBMS.Database = MongoDB
+            DBMS.Database = MongoDB()
             
         # elif dbms == 'mysql':
         #     MysqlDB.initialize(host, port, username, password, database)
@@ -77,7 +77,7 @@ class DBMS():
         
         elif dbms == 'sqlite':
             SqliteDB.initialize(database)
-            DBMS.Database = SqliteDB
+            DBMS.Database = SqliteDB()
             
     @staticmethod
     def initialize_with_defaults(dbms, database):

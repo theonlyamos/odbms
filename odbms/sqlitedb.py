@@ -6,13 +6,16 @@
 # @Version : 1.0.0
 
 import os
+import logging
 import sqlite3
+from sqlite3 import Connection, Cursor
 from sys import exit
+from typing import Union
 
 class SqliteDB:
-    db = None
+    db: Connection
+    cursor: Cursor
     dbms = 'sqlite'
-    cursor = None
     
     @staticmethod
     def initialize(database):
@@ -42,7 +45,11 @@ class SqliteDB:
             return {'status': 'Error', 'message': str(e)}
     
     @staticmethod
-    def update(table: str, params: dict, data: dict)-> int:
+    def insert_many(tale: str, data: list[dict]):
+        return {}
+    
+    @staticmethod
+    def update(table: str, params: dict, data: dict)-> Union[int, None]:
 
         query = f'UPDATE {table} SET'
         for key in data.keys():
@@ -64,7 +71,8 @@ class SqliteDB:
             return SqliteDB.cursor.lastrowid
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(str(e))
+            return None
     
     @staticmethod
     def find(table: str, params: dict = {}):
@@ -122,10 +130,11 @@ class SqliteDB:
             return SqliteDB.cursor.rowcount
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(str(e))
+            return 0
     
     @staticmethod
-    def sum(table: str, column: str, params: dict = {}):
+    def sum(table: str, column: str, params: dict = {})-> int:
         query = f'SELECT SUM({column}) as sum FROM {table}'
         
         if len(params.keys()):
@@ -141,7 +150,8 @@ class SqliteDB:
             return SqliteDB.cursor.fetchall()[0]['sum']
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(str(e))
+            return 0
     
     @staticmethod
     def query(query: str):
