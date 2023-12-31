@@ -48,9 +48,9 @@ class Model():
         @return None
         '''
 
-        data = {}
+        data = self.__dict__.copy()
         
-        return DBMS.Database.insert(Model.TABLE_NAME, data)
+        return DBMS.Database.insert(Model.TABLE_NAME, Model.normalise(data, 'params'))
 
     @staticmethod
     def insert_many(documents):
@@ -317,8 +317,13 @@ class Model():
         @paramas None
         @return dict() format of Function instance
         '''
+        
+        data = self.__dict__.copy()
 
-        return self.__dict__
+        if 'password' in data.keys():
+            del data['password']
+
+        return self.__dict__.copy()
     
     @classmethod
     def normalise(cls, content: dict|None, optype: str = 'dbresult')-> dict:
