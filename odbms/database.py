@@ -5,15 +5,18 @@
 # @Link    : link
 # @Version : 1.0.0
 
-from typing import Type, Literal
+from typing import Type, Literal, Optional
 from .mongodb import MongoDB
 from .mysqldb import MysqlDB
+from .sqlitedb import SqliteDB
+from .postgresqldb import PostgresqlDB
+# from .model import Model
 
 
 class Database():
-    db: Type[MysqlDB]|Type[MongoDB]|None = None
+    db: Type[MysqlDB]|Type[MongoDB]|Type[PostgresqlDB]|Type[SqliteDB]|None = None
     dbms: str|None = None
-    models: Type[Models] = Models()
+    # models: Type[Models] = Models()
 
     @staticmethod
     def initialize(dbsettings: dict, app=None):
@@ -31,17 +34,28 @@ class Database():
                 dbsettings['dbusername'],
                 dbsettings['dbpassword'])
             Database.db = MysqlDB
+            
+        elif dbsettings['dbms'] == 'postgresql':
+            PostgresqlDB.initialize(dbsettings['dbhost'], 
+                dbsettings['dbport'],
+                dbsettings['dbname'],
+                dbsettings['dbusername'],
+                dbsettings['dbpassword'])
+            Database.db = PostgresqlDB
+            
+        elif dbsettings['dbms'] == 'sqlite':
+            SqliteDB.initialize(dbsettings['dbname'])
+            Database.db = SqliteDB
     
-    @staticmethod
-    def add_model(model: object):
-        '''Add a model to be loaded as a database table'''
-        setattr(Database.models, model.TABLE_NAME, model)
-        model.Database = Database
+    # @staticmethod
+    # def add_model(model: Model):
+    #     '''Add a model to be loaded as a database table'''
+    #     setattr(Database.models, model.TABLE_NAME, model)
+    #     model.Database = Database
     
     @staticmethod
     def setup():
-        if Database.dbms == 'mysql':
-            
+        if Database.dbms in ['postgresql', 'mysql', 'sqlite']:
             print('[-!-] Creating Database Tables')
             print('[~] Creating users table')
             Database.db.query('''
@@ -58,7 +72,7 @@ class Database():
 
     
     @staticmethod
-    def load_defaults(dbms: Literal['mysql','mongodb'], database: str = None):
+    def load_defaults(dbms: Literal['mysql','mongodb', 'postgresql', 'sqlite'], database: Optional[str] = None):
         settings = {}
         settings['dbms'] = dbms
         settings['dbhost'] = '127.0.0.1'

@@ -9,6 +9,7 @@ from typing import Type, Literal, Union
 from .mongodb import MongoDB
 # from .mysqldb import MysqlDB
 from .sqlitedb import SqliteDB
+from .postgresqldb import PostgresqlDB
 
 from bson.objectid import ObjectId
 
@@ -48,10 +49,10 @@ def normalise(content: dict, optype: str = 'dbresult')-> dict:
 
 class DBMS():
     # Database: Type[MongoDB]|Type[MysqlDB]|None = None
-    Database: Union[MongoDB,SqliteDB]
+    Database: Union[MongoDB,SqliteDB, PostgresqlDB]
     
     @staticmethod
-    def initialize(dbms: Literal['mysql', 'mongodb', 'sqlite'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
+    def initialize(dbms: Literal['mysql', 'mongodb', 'sqlite', 'postgresql'], host: str = '127.0.0.1', port: int = 0, username: str = '', password: str = '', database: str = ''):
         '''
         Static method for select and connecting \n 
         to specified database system.
@@ -78,6 +79,10 @@ class DBMS():
         elif dbms == 'sqlite':
             SqliteDB.initialize(database)
             DBMS.Database = SqliteDB()
+            
+        elif dbms == 'postgresql':
+            PostgresqlDB.initialize(host, port, username, password, database)
+            DBMS.Database = PostgresqlDB()
             
     @staticmethod
     def initialize_with_defaults(dbms, database):

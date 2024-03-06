@@ -5,7 +5,7 @@ import sys
 
 Database = None
 
-VERSION = "0.2.2"
+VERSION = "0.2.7"
 
 def main(args):
     global parser
@@ -14,7 +14,7 @@ def main(args):
     if not args.dbms:
         parser.print_help()
         sys.exit(1)
-    if 'mysql' in args.dbms or 'mongodb' in args.dbms or 'sqlite' in args.dbms:
+    if args.dbms in ['mysql','mongodb','sqlite', 'postgresql']:
         Database = DBMS.initialize_with_defaults(args.dbms, args.database)
         # from odbms import Database
         
@@ -26,7 +26,7 @@ def get_arguments():
     global parser
     global VERSION
         
-    parser.add_argument('dbms', type=str, choices=['mysql','mongodb','sqlite'], help="Type of dbms [mysql|mongodb]")
+    parser.add_argument('dbms', type=str, choices=['mysql','mongodb','sqlite', 'postgresql'], help="Type of dbms [mysql|mongodb|sqlite|postgresql]")
     parser.add_argument('-db', '--database', default='runit', type=str, help="Name of database")
     parser.add_argument('-v','--version', action='version', version=f'%(prog)s {VERSION}')
     parser.set_defaults(func=main)

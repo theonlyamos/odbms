@@ -128,7 +128,7 @@ class Model():
         @params None
         @return int Sum of column
         '''
-        return DBMS.Database.sum(cls.TABLE_NAME, column)
+        return DBMS.Database.sum(cls.TABLE_NAME, column) # type: ignore
 
     @classmethod
     def get(cls, id = None):
@@ -142,7 +142,7 @@ class Model():
 
         if id is not None:
             model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
-            return cls(**cls.normalise(model)) if model else None
+            return cls(**cls.normalise(model)) if model else None # type: ignore
         
         # query = 'SELECT '
         # if cls.SELECTED_COLUMNS:
