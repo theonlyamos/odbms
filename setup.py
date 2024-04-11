@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.2.7'
+VERSION = '0.2.8'
 
 with open('README.md', 'rt') as file:
     description = file.read()
@@ -17,7 +17,7 @@ setup(
     long_description_content_type = "text/markdown",
     include_package_data=True,
     # install_requires=['python-dotenv','pymongo', 'mysql', 'mysql-connector', 'mysql-connector-python'],
-    install_requires=['python-dotenv','pymongo'],
+    install_requires=['python-dotenv','pymongo', 'psycopg2'],
     keywords='python3 runit developer serverless architecture docker sqlite mysql mongodb',
     project_urls={
         'Source': 'https://github.com/theonlyamos/odbms/',
