@@ -1,11 +1,5 @@
-from datetime import datetime
-from typing import Dict, List
-import uuid
-
-from bson.objectid import ObjectId
-
 from odbms import DBMS, Model
-
+from utils import Utils
 
 class User(Model):
     '''A model class for user'''

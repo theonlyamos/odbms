@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import Union
-import uuid
 
 from bson.objectid import ObjectId
 from .dbms import DBMS
@@ -15,11 +14,11 @@ class Model():
     LIMIT = 0
 
     def __init__(self, created_at=None, updated_at=None, id=None):
-        self.created_at = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S") \
+        self.created_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
             if not created_at else created_at
-        self.updated_at = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S") \
+        self.updated_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
             if not updated_at else updated_at
-        self.id = str(uuid.uuid4()) if not id else str(id)
+        self.id = str(ObjectId()) if not id else str(id)
     
     @classmethod
     def create_table(cls):
