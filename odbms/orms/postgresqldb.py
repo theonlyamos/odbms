@@ -1,16 +1,42 @@
+import logging
 import psycopg2
 from psycopg2 import sql
 from psycopg2.extensions import connection, cursor as Cursor
 from typing import Union, List, Dict
 
-class PostgresqlDB:
+from .base import ORM
+
+class PostgresqlDB(ORM):
     db: connection
     cursor: Cursor
     dbms = 'postgresql'
 
     @staticmethod
-    def initialize(host, port, database, user, password):
+    def initialize(host, port, user, password, database):
         try:
+            # Connect to the PostgreSQL server without specifying a database
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password
+            )
+            conn.autocommit = True
+            cursor = conn.cursor()
+
+            # Check if the database exists
+            cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{database}'")
+            exists = cursor.fetchone()
+
+            if not exists:
+                # If the database doesn't exist, create it
+                cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
+                logging.info(f"Database '{database}' created successfully.")
+
+            cursor.close()
+            conn.close()
+            
+            # Connect to the database
             PostgresqlDB.db = psycopg2.connect(
                 host=host,
                 port=port,
@@ -20,21 +46,21 @@ class PostgresqlDB:
             )
             PostgresqlDB.db.set_session(autocommit=False)
             PostgresqlDB.cursor = PostgresqlDB.db.cursor()
+            
         except (Exception, psycopg2.Error) as error:
-            print("Error connecting to PostgreSQL database:", error)
+            logging.error("Error connecting to PostgreSQL database:", error)
 
     @staticmethod
-    def query(sql_query, params=None):
+    def execute(query, params=None):
         try:
             if params:
-                PostgresqlDB.cursor.execute(sql_query, params)
+                PostgresqlDB.cursor.execute(query, params)
             else:
-                PostgresqlDB.cursor.execute(sql_query)
-            result = PostgresqlDB.cursor.fetchall()
-            PostgresqlDB.db.commit()
-            return result
+                PostgresqlDB.cursor.execute(query)
+                PostgresqlDB.db.commit()
+
         except (Exception, psycopg2.Error) as error:
-            print("Error executing SQL:", error)
+            logging.exception(error)
             PostgresqlDB.db.rollback()
 
     @staticmethod
@@ -72,7 +98,7 @@ class PostgresqlDB:
 
     @staticmethod
     def find(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
-        columns = sql.SQL(', ').join(sql.Identifier(col) for col in projection) if projection else sql.SQL('*')
+        columns = sql.SQL(', ').join(map(sql.Identifier, projection)) if projection else sql.SQL('*')
         conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
         sql_query = sql.SQL("SELECT {} FROM {}").format(
             columns,
@@ -85,30 +111,35 @@ class PostgresqlDB:
             )
         try:
             PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            result = PostgresqlDB.cursor.fetchall()
+            column_names = [desc.name for desc in PostgresqlDB.cursor.description] # type: ignore
+            result = [dict(zip(column_names, row)) for row in PostgresqlDB.cursor.fetchall()]
             PostgresqlDB.db.commit()
             return result
         except (Exception, psycopg2.Error) as error:
-            print("Error executing SQL:", error)
+            logging.error({'status': 'Error', 'message': str(error)})
             PostgresqlDB.db.rollback()
+            return []
 
     @staticmethod
     def find_one(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
-        columns = sql.SQL(', ').join(sql.Identifier(col) for col in projection) if projection else sql.SQL('*')
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
+        columns = sql.SQL(', ').join(map(sql.Identifier, projection)) if projection else sql.SQL('*')
+        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
         sql_query = sql.SQL("SELECT {} FROM {} WHERE {} LIMIT 1").format(
-            columns, 
+            columns,
             sql.Identifier(table),
             sql.SQL(conditions)
         )
         try:
             PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            result = PostgresqlDB.cursor.fetchone()
+            column_names = [desc.name for desc in PostgresqlDB.cursor.description] # type: ignore
+            result = dict(zip(column_names, PostgresqlDB.cursor.fetchone())) if PostgresqlDB.cursor.rowcount > 0 else None # type: ignore
             PostgresqlDB.db.commit()
+            
             return result
         except (Exception, psycopg2.Error) as error:
             print("Error executing SQL:", error)
             PostgresqlDB.db.rollback()
+            return {}
 
     @staticmethod
     def remove(table: str, filter: Dict):

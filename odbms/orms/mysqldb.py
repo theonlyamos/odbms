@@ -9,7 +9,9 @@ import os
 from mysql import connector
 from sys import exit
 
-class MysqlDB:
+from .base import ORM
+
+class MysqlDB(ORM):
     db = None
     dbms = 'mysql'
     cursor = None

@@ -1,5 +1,6 @@
 from datetime import datetime
-from typing import Union
+from typing import Optional, Union, get_type_hints, Any
+import inspect
 
 from bson.objectid import ObjectId
 from .dbms import DBMS
@@ -13,31 +14,98 @@ class Model():
     ORDER_BY = ()
     LIMIT = 0
 
-    def __init__(self, created_at=None, updated_at=None, id=None):
+    def __init__(self, created_at: Optional[str] = None, updated_at: Optional[str] = None, id: Optional[str] = None):
         self.created_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
             if not created_at else created_at
         self.updated_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
             if not updated_at else updated_at
-        self.id = str(ObjectId()) if not id else str(id)
+        self.id = ObjectId() if not id else str(id)
+
     
     @classmethod
     def create_table(cls):
-        f'''
-        Create Database Table for model (Only in Mysql).\n
-        E.g: `CREATE TABLE IF NOT EXISTS {cls.TABLE_NAME}
-            (
-            id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            name varchar(50) not null,
-            email varchar(100) not null,
-            password varchar(500) not null,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )`
+        """
+        Create the database table for the model (Only for non-MongoDB databases).
+        """
+        if DBMS.Database.dbms != 'mongodb':
+            excluded = ['created_at', 'updated_at', 'id']
+            columns = []
+            additional_columns = {
+                'sqlite': [
+                    'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'id TEXT PRIMARY KEY',
+                ],
+                'postgresql': [
+                    'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'id TEXT PRIMARY KEY',
+                ],
+                'mysql': [
+                    'created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+                    'updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+                    'id VARCHAR(255) PRIMARY KEY',
+                ],
+                
+            }
+            # Get the __init__ method signature
+            init_signatures = inspect.signature(cls.__init__)
+            
+            init_parameters = [param for param in init_signatures.parameters.values()
+                            if param.name != 'self']
+            
+            all_parameters = init_parameters
+            
+            for param in all_parameters:
+                param_name = param.name
+                param_type = param.annotation
+                
+                column_type = cls.get_column_type(param_type)
+                if column_type:
+                    if param_name not in excluded:
+                        column_def = f"{param_name} {column_type}"
+                        columns.append(column_def)
+                        
+            columns += additional_columns.get(DBMS.Database.dbms, [])
+            columns_str = ', '.join(columns)
+            table_definition = f"CREATE TABLE IF NOT EXISTS {cls.TABLE_NAME} ({columns_str});"
+            
+            DBMS.Database.execute(table_definition)
+            
+            if DBMS.Database.dbms == 'sqlite':
+                DBMS.Database.execute(f'''CREATE TRIGGER IF NOT EXISTS update_{cls.TABLE_NAME}_timestamp
+                AFTER UPDATE ON {cls.TABLE_NAME}
+                BEGIN
+                    UPDATE {cls.TABLE_NAME} SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW') WHERE id = NEW.id;
+                END;''')
+            elif DBMS.Database.dbms == 'postgresql':
+                DBMS.Database.execute(f"""CREATE OR REPLACE FUNCTION update_{cls.TABLE_NAME}_timestamp()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.updated_at := CURRENT_TIMESTAMP;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;""")
+                DBMS.Database.execute(f"""CREATE TRIGGER update_{cls.TABLE_NAME}_timestamp
+                BEFORE UPDATE ON {cls.TABLE_NAME}
+                FOR EACH ROW
+                EXECUTE PROCEDURE update_{cls.TABLE_NAME}_timestamp();""")
+    
+    @staticmethod
+    def get_column_type(attr_type: Any) -> str:
+        """
+        Map Python types to SQL column types.
+        """
         
-        @paramas None
-        @return Database query result
-        '''
-        pass
+        type_mapping = {
+            str: "TEXT",
+            int: "INTEGER",
+            float: "REAL",
+            bool: "BOOLEAN",
+            list: "TEXT"
+            # Add more mappings as needed
+        }
+        return type_mapping.get(attr_type, "")
 
     def save(self):
         '''
@@ -49,8 +117,33 @@ class Model():
 
         data = self.__dict__.copy()
         
-        return DBMS.Database.insert(Model.TABLE_NAME, Model.normalise(data, 'params'))
+        if DBMS.Database.dbms != 'mongodb':
+            data['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
+            del data["created_at"]
+            del data["updated_at"]
 
+        if isinstance(self.id, ObjectId):
+            return DBMS.Database.insert(self.TABLE_NAME, Model.normalise(data, 'params'))
+        
+        # Update the existing record in database
+        del data['password']
+        return DBMS.Database.update(self.TABLE_NAME, self.normalise({'id': self.id}, 'params'), self.normalise(data, 'params'))
+
+    @staticmethod
+    def insert(document):
+        '''
+        Static Method for saving documents into database
+
+        @param documents Data to be saved
+        @return Mongodb InsertManyResult
+        '''
+
+        data = {}
+        
+        return DBMS.Database.insert(Model.TABLE_NAME, document)
+        
+        
+    
     @staticmethod
     def insert_many(documents):
         '''
@@ -130,7 +223,7 @@ class Model():
         return DBMS.Database.sum(cls.TABLE_NAME, column) # type: ignore
 
     @classmethod
-    def get(cls, id = None):
+    def get(cls, id: str):
         '''
         Class Method for retrieving \n
         model data from database
@@ -139,9 +232,12 @@ class Model():
         @return Model instance(s)
         '''
 
-        if id is not None:
-            model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
-            return cls(**cls.normalise(model)) if model else None # type: ignore
+        result = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
+        
+        if isinstance(result, dict):
+            return cls(**cls.normalise(result)) if len(result.keys()) else None
+        elif isinstance(result, list) or isinstance(result, tuple):
+            return cls(*result) if len(result) else None
         
         # query = 'SELECT '
         # if cls.SELECTED_COLUMNS:
@@ -187,8 +283,16 @@ class Model():
         @params None
         @return List[Model] instance(s)
         '''
+        data = []
+        results = DBMS.Database.find(cls.TABLE_NAME, {})
 
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, {}) if elem] # type: ignore
+        for elem in results:
+            if isinstance(elem, dict):
+                data.append(cls(**cls.normalise(elem)))
+            else:
+                data.append(cls(*elem))
+
+        return data
         
     @classmethod
     def find(cls, params: dict, projection: Union[list,dict] = [])-> list:
@@ -199,8 +303,17 @@ class Model():
         @param params
         @return List[Model]
         '''
+        
+        data = []
+        results = DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection) # type: ignore
 
-        return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)] # type: ignore
+        for elem in results:
+            if isinstance(elem, dict):
+                data.append(cls(**cls.normalise(elem)))
+            else:
+                data.append(cls(*elem))
+
+        return data
     
     @classmethod
     def find_one(cls, params: dict, projection: Union[list,dict] = []):

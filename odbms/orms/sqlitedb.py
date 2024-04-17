@@ -9,10 +9,11 @@ import os
 import logging
 import sqlite3
 from sqlite3 import Connection, Cursor
-from sys import exit
 from typing import Union
 
-class SqliteDB:
+from .base import ORM
+
+class SqliteDB(ORM):
     db: Connection
     cursor: Cursor
     dbms = 'sqlite'
@@ -28,14 +29,15 @@ class SqliteDB:
     @staticmethod
     def insert(table: str, data: dict):
 
-        query = f'INSERT INTO {table}('
+        query = f'INSERT INTO {table} ('
         query += ', '.join(data.keys())
-        query += ") VALUES('"
+        query += ") VALUES ('"
 
         values = [str(val) for val in data.values()]
         query += "','".join(values)
         query += "')"
         try:
+            print(query)
             SqliteDB.cursor.execute(query)
             SqliteDB.db.commit()
 
@@ -75,8 +77,8 @@ class SqliteDB:
             return None
     
     @staticmethod
-    def find(table: str, params: dict = {}):
-        query = f'SELECT * FROM {table}'
+    def find(table: str, params: dict = {}, columns: list = ['*']):
+        query = f'SELECT {', '.join(columns)} FROM {table}'
 
         if len(params.keys()):
             query += ' WHERE '
@@ -87,11 +89,12 @@ class SqliteDB:
         try:
             SqliteDB.cursor.execute(query, tuple(params.values()))
             SqliteDB.db.commit()
-
-            return [x for x in SqliteDB.cursor.fetchall()]
+            
+            return SqliteDB.cursor.fetchall()
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error({'status': 'Error', 'message': str(e)})
+            return []
     
     @staticmethod
     def find_one(table: str, params: dict = {}):
@@ -108,10 +111,11 @@ class SqliteDB:
             SqliteDB.db.commit()
 
             resp = [x for x in SqliteDB.cursor.fetchall()]
-            return resp[0]
+            return resp[0] if len(resp) else resp
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error({'status': 'Error', 'message': str(e)})
+            return []
     
     @staticmethod
     def count(table: str, params: dict = {})-> int:
@@ -154,7 +158,7 @@ class SqliteDB:
             return 0
     
     @staticmethod
-    def query(query: str):
+    def execute(query: str):
         try:
             SqliteDB.cursor.execute(query)
             SqliteDB.db.commit()
@@ -214,7 +218,7 @@ class SqliteDB:
         try:
             result = None
             with open(filename, 'rt') as file:
-                result = SqliteDB.query(file.read())
+                result = SqliteDB.execute(file.read())
                 
             return result
                 

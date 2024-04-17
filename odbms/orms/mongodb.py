@@ -5,10 +5,12 @@ import os
 from typing import Union
 from dotenv import load_dotenv
 
+from .base import ORM
+
 load_dotenv()
 
 
-class MongoDB(object):
+class MongoDB(ORM):
     db: Database
     dbms = 'mongodb'
     
