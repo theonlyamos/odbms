@@ -5,7 +5,7 @@ import sys
 
 Database = None
 
-VERSION = "0.2.9"
+VERSION = "0.3.1"
 
 def main(args):
     global parser

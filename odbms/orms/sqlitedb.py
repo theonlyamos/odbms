@@ -77,7 +77,7 @@ class SqliteDB(ORM):
     
     @staticmethod
     def find(table: str, params: dict = {}, columns: list = ['*']):
-        query = f'SELECT {', '.join(columns)} FROM {table}'
+        query = f'SELECT {", ".join(columns)} FROM {table}'
 
         if len(params.keys()):
             query += ' WHERE '
