@@ -435,7 +435,7 @@ class Model():
         if 'password' in data.keys():
             del data['password']
 
-        return self.__dict__.copy()
+        return data
     
     @classmethod
     def normalise(cls, content: dict|None, optype: str = 'dbresult')-> dict:
@@ -474,4 +474,15 @@ class Model():
                         content[key] = '::'.join([str(v) for v in value])
                 normalized = content
             return normalized
+        else:
+            if optype == 'params':
+                if 'id' in content.keys():
+                    content['id'] = str(content['id'])
+            for key, value in content.items():
+                if type(value) == list:
+                    content[key] = '::'.join([str(v) for v in value])
+            for key, value in content.items():
+                if type(value) == datetime:
+                    content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
+            
         return content

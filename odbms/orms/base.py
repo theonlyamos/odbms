@@ -42,3 +42,6 @@ class ORM:
 
     def import_from_file(self, filename: str):
         pass
+    
+    def command(self, query: str, table: str):
+        pass

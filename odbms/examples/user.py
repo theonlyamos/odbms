@@ -44,13 +44,10 @@ class User(Model):
         return DBMS.Database.update(self.TABLE_NAME, self.normalise({'id': self.id}, 'params'), self.normalise(data, 'params'))
 
 if __name__ == '__main__':
-    DBMS.initialize_with_defaults('mongodb', 'runit')
-    # DBMS.initialize('postgresql', port=5432, username='postgres', password='Ph4n70m#', database='runit')
+    DBMS.initialize_with_defaults('sqlite', 'database')
+    # DBMS.initialize_with_defaults('mongodb', 'database')
+    # DBMS.initialize('postgresql', port=5432, username='postgres', password='', database='database')
     # User.create_table()
-    # new_user = User('theonlyamos@gmail.com', 'Amos Amissah', 'S0cr4t3s')
-    # result = new_user.save()
-    user = User.get('661fe85e132b3db29c05a8ba')
-    if user:
-        user.name = 'Amos Amissah'
-        user.save()
-        # print()
+    # new_user = User('test@user.com', 'Test User', 'My Passwrod').save()
+    users = User.all()
+    # user = User.get('661fe85e132b3db29c05a8ba')

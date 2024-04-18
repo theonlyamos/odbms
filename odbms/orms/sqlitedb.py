@@ -37,7 +37,6 @@ class SqliteDB(ORM):
         query += "','".join(values)
         query += "')"
         try:
-            print(query)
             SqliteDB.cursor.execute(query)
             SqliteDB.db.commit()
 
