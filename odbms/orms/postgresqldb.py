@@ -67,7 +67,7 @@ class PostgresqlDB(ORM):
     def insert(table: str, data: Dict):
         columns = sql.SQL(', ').join(sql.Identifier(col) for col in data.keys())
         values = ', '.join(['%s'] * len(data))
-        sql_query = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
+        sql_query = sql.SQL("INSERT INTO {} ({}) VALUES ({}) RETURNING id").format(
             sql.Identifier(table),
             columns,
             sql.SQL(values)
@@ -75,9 +75,13 @@ class PostgresqlDB(ORM):
         try:
             PostgresqlDB.cursor.execute(sql_query, list(data.values()))
             PostgresqlDB.db.commit()
+            new_inserts = PostgresqlDB.cursor.fetchone()
+            insert_id =   new_inserts[0] if new_inserts else 0
+            return insert_id
         except (Exception, psycopg2.Error) as error:
             print("Error inserting data:", error)
             PostgresqlDB.db.rollback()
+            return 0
 
     @staticmethod
     def insert_many(table: str, data: List[Dict]):
@@ -99,7 +103,7 @@ class PostgresqlDB(ORM):
     @staticmethod
     def find(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
         columns = sql.SQL(', ').join(map(sql.Identifier, projection)) if projection else sql.SQL('*')
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
+        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
         sql_query = sql.SQL("SELECT {} FROM {}").format(
             columns,
             sql.Identifier(table),
@@ -173,7 +177,7 @@ class PostgresqlDB(ORM):
 
     @staticmethod
     def count(table: str, filter: Dict = {}):
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
+        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
         sql_query = sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
             sql.Identifier(table),
             sql.SQL(conditions)

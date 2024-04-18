@@ -481,8 +481,10 @@ class Model():
             for key, value in content.items():
                 if type(value) == list:
                     content[key] = '::'.join([str(v) for v in value])
-            for key, value in content.items():
-                if type(value) == datetime:
+
+                elif type(value) == datetime:
                     content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
+                elif type(value) == dict:
+                    content[key] = json.dumps(value) # type: ignore
             
         return content
