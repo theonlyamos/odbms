@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Union, get_type_hints, Any
 import inspect
+import json
 
 from bson.objectid import ObjectId
 from .dbms import DBMS
@@ -169,8 +170,9 @@ class Model():
             del update['id']
 
         if DBMS.Database.dbms == 'mongodb':
-            update['updated_at'] = (datetime.utcnow()).strftime("%a %b %d %Y %H:%M:%S")
-        return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), update)
+            update['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
+        
+        return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), cls.normalise(update, 'params'))
     
     @classmethod
     def remove(cls, query: dict):

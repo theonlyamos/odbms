@@ -96,9 +96,11 @@ class PostgresqlDB(ORM):
         try:
             PostgresqlDB.cursor.execute(sql_query, [value for row in data for value in row.values()])
             PostgresqlDB.db.commit()
+            return True
         except (Exception, psycopg2.Error) as error:
             print("Error inserting data:", error)
             PostgresqlDB.db.rollback()
+            return False
 
     @staticmethod
     def find(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
@@ -147,7 +149,7 @@ class PostgresqlDB(ORM):
 
     @staticmethod
     def remove(table: str, filter: Dict):
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
+        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
         sql_query = sql.SQL("DELETE FROM {} WHERE {}").format(
             sql.Identifier(table),
             sql.SQL(conditions)
@@ -155,14 +157,16 @@ class PostgresqlDB(ORM):
         try:
             PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
             PostgresqlDB.db.commit()
+            return True
         except (Exception, psycopg2.Error) as error:
             print("Error removing data:", error)
             PostgresqlDB.db.rollback()
+            return False
 
     @staticmethod
     def update(table: str, filter: Dict, data: Dict):
-        set_clause = ', '.join(f"{sql.Identifier(key)} = %s" for key in data.keys())
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in filter.keys())
+        set_clause = ', '.join(f"{key} = %s" for key in data.keys())
+        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
         sql_query = sql.SQL("UPDATE {} SET {} WHERE {}").format(
             sql.Identifier(table),
             sql.SQL(set_clause),
@@ -171,9 +175,11 @@ class PostgresqlDB(ORM):
         try:
             PostgresqlDB.cursor.execute(sql_query, list(data.values()) + list(filter.values()))
             PostgresqlDB.db.commit()
+            return True
         except (Exception, psycopg2.Error) as error:
             print("Error updating data:", error)
             PostgresqlDB.db.rollback()
+            return False
 
     @staticmethod
     def count(table: str, filter: Dict = {}):
