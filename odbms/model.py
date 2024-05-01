@@ -26,7 +26,7 @@ class Model():
     @classmethod
     def create_table(cls):
         """
-        Create the database table for the model (Only for non-MongoDB databases).
+        Create the database table for the model (Only for relational databases).
         """
         if DBMS.Database.dbms != 'mongodb':
             excluded = ['created_at', 'updated_at', 'id']
@@ -62,10 +62,10 @@ class Model():
                 param_type = param.annotation
                 
                 column_type = cls.get_column_type(param_type)
-                if column_type:
-                    if param_name not in excluded:
-                        column_def = f"{param_name} {column_type}"
-                        columns.append(column_def)
+                
+                if param_name not in excluded:
+                    column_def = f"{param_name} {column_type}"
+                    columns.append(column_def)
                         
             columns += additional_columns.get(DBMS.Database.dbms, [])
             columns_str = ', '.join(columns)
@@ -103,10 +103,11 @@ class Model():
             int: "INTEGER",
             float: "REAL",
             bool: "BOOLEAN",
-            list: "TEXT"
+            list: "TEXT",
+            dict: "TEXT"
             # Add more mappings as needed
         }
-        return type_mapping.get(attr_type, "")
+        return type_mapping.get(attr_type, "TEXT")
 
     def save(self):
         '''
@@ -127,7 +128,7 @@ class Model():
             return DBMS.Database.insert(self.TABLE_NAME, Model.normalise(data, 'params'))
         
         # Update the existing record in database
-        del data['password']
+        data.pop('id', None)
         return DBMS.Database.update(self.TABLE_NAME, self.normalise({'id': self.id}, 'params'), self.normalise(data, 'params'))
 
     @staticmethod
@@ -327,7 +328,9 @@ class Model():
         @return List[Model]
         '''
 
-        return cls(**cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))) # type: ignore
+        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))
+
+        return cls(**result) if len(result.keys()) else None
     
     @classmethod
     def query(cls, column: str, search: str):
@@ -433,9 +436,11 @@ class Model():
         '''
         
         data = self.__dict__.copy()
+        
+        data['created_at'] = data['created_at'].strftime("%a %b %d %Y %H:%M:%S")
+        data['updated_at'] = data['updated_at'].strftime("%a %b %d %Y %H:%M:%S")
 
-        if 'password' in data.keys():
-            del data['password']
+        data.pop('password', None)
 
         return data
     
@@ -480,13 +485,32 @@ class Model():
             if optype == 'params':
                 if 'id' in content.keys():
                     content['id'] = str(content['id'])
-            for key, value in content.items():
-                if type(value) == list:
-                    content[key] = '::'.join([str(v) for v in value])
+                for key, value in content.items():
+                    if type(value) == list:
+                        content[key] = '::'.join([str(v) for v in value])
 
-                elif type(value) == datetime:
-                    content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
-                elif type(value) == dict:
-                    content[key] = json.dumps(value) # type: ignore
+                    elif type(value) == datetime:
+                        content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
+                    elif type(value) == dict:
+                        content[key] = json.dumps(value) # type: ignore
+            else:
+                init_signatures = inspect.signature(cls.__init__)
+            
+                init_parameters = [param for param in init_signatures.parameters.values()
+                                if param.name != 'self']
+                
+                all_parameters = init_parameters
+                type_mapping = [str, int, float, bool, list, dict]
+                for param in all_parameters:
+                    param_name = param.name
+                    param_type = param.annotation
+                    
+                    if param_type in type_mapping:
+                        if param_type is dict:
+                            content[param_name] = json.loads(content[param_name])
+                        elif param_type is list:
+                            content[param_name] = content[param_name].split('::')
+                        else:
+                            content[param_name] = param_type(content[param_name])
             
         return content
