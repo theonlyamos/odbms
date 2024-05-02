@@ -328,7 +328,7 @@ class Model():
         @return List[Model]
         '''
 
-        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection))
+        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)) # type: ignore
 
         return cls(**result) if len(result.keys()) else None
     
@@ -483,8 +483,9 @@ class Model():
             return normalized
         else:
             if optype == 'params':
-                if 'id' in content.keys():
-                    content['id'] = str(content['id'])
+                if '_id' in content.keys():
+                    content['id'] = str(content['_id'])
+                    del content['_id']
                 for key, value in content.items():
                     if type(value) == list:
                         content[key] = '::'.join([str(v) for v in value])
