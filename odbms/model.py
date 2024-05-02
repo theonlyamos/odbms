@@ -125,7 +125,7 @@ class Model():
             del data["updated_at"]
 
         if isinstance(self.id, ObjectId):
-            return DBMS.Database.insert(self.TABLE_NAME, Model.normalise(data, 'params'))
+            return DBMS.Database.insert(self.TABLE_NAME, self.normalise(data, 'params'))
         
         # Update the existing record in database
         data.pop('id', None)
@@ -437,8 +437,11 @@ class Model():
         
         data = self.__dict__.copy()
         
-        data['created_at'] = data['created_at'].strftime("%a %b %d %Y %H:%M:%S")
-        data['updated_at'] = data['updated_at'].strftime("%a %b %d %Y %H:%M:%S")
+        if isinstance(data['created_at'], datetime):
+            data['created_at'] = data['created_at'].strftime("%a %b %d %Y %H:%M:%S")
+            
+        if isinstance(data['updated_at'], datetime):
+            data['updated_at'] = data['updated_at'].strftime("%a %b %d %Y %H:%M:%S")
 
         data.pop('password', None)
 
@@ -487,9 +490,10 @@ class Model():
                     content['id'] = str(content['_id'])
                     del content['_id']
                 for key, value in content.items():
-                    if type(value) == list:
+                    if isinstance(value, ObjectId):
+                        content[key] = str(value)
+                    elif type(value) == list:
                         content[key] = '::'.join([str(v) for v in value])
-
                     elif type(value) == datetime:
                         content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
                     elif type(value) == dict:
