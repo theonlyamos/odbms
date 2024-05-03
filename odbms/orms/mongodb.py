@@ -24,7 +24,8 @@ class MongoDB(ORM):
 
     @staticmethod
     def insert(collection: str, data: dict):
-        return MongoDB.db[collection].insert_one(data)
+        result = MongoDB.db[collection].insert_one(data)
+        return result.inserted_id
 
     @staticmethod
     def insert_many(collection: str, data: dict):

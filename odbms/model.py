@@ -8,10 +8,10 @@ from .dbms import DBMS
 
 class Model():
     '''A model class'''
-    TABLE_NAME = ''
+    TABLE_NAME: str = ''
     SELECTED_COLUMNS = []
     WHERE_CLAUSE = []
-    GROUP_BY = ''
+    GROUP_BY: str = ''
     ORDER_BY = ()
     LIMIT = 0
 
@@ -108,6 +108,52 @@ class Model():
             # Add more mappings as needed
         }
         return type_mapping.get(attr_type, "TEXT")
+
+    @classmethod
+    def alter_table(cls, changes: dict):
+        """
+        Alter the table structure by adding, modifying, or dropping columns.
+
+        @param changes: A dictionary mapping column names to their new data types.
+        """
+        if DBMS.Database.dbms != 'mongodb':
+            # Fetch existing columns from the database
+            fetch_columns_sql = f"SELECT column_name FROM information_schema.columns WHERE table_name='{cls.TABLE_NAME}';"
+            existing_columns = {row['column_name'] for row in DBMS.Database.execute(fetch_columns_sql)}
+            default_columns = {'id', 'created_at', 'updated_at'}
+            # Determine columns to add or modify and columns to drop
+            specified_columns = set(changes.keys())
+            specified_columns.update(default_columns)
+            columns_to_drop = existing_columns - specified_columns
+            columns_to_add_or_modify = specified_columns - existing_columns
+            
+            alter_statements = []
+
+            # Handle adding or modifying columns
+            for column, data_type in changes.items():
+                column_type = cls.get_column_type(data_type)
+                if column in columns_to_add_or_modify:
+                    alter_statements.append(f"ADD COLUMN {column} {column_type}")
+                else:
+                    # Modify existing column
+                    if DBMS.Database.dbms in ['mysql', 'postgresql']:
+                        alter_statements.append(f"ALTER COLUMN {column} TYPE {column_type}")
+                    elif DBMS.Database.dbms == 'sqlite':
+                        # SQLite does not support MODIFY COLUMN directly, needs table recreation
+                        continue  # Handle SQLite modifications separately if needed
+
+            # Handle dropping columns
+            for column in columns_to_drop:
+                if DBMS.Database.dbms in ['mysql', 'postgresql']:
+                    alter_statements.append(f"DROP COLUMN {column}")
+                elif DBMS.Database.dbms == 'sqlite':
+                    # SQLite does not support DROP COLUMN directly, needs table recreation
+                    continue  # Handle SQLite drops separately if needed
+
+            # Execute all alter statements
+            for statement in alter_statements:
+                alter_sql = f"ALTER TABLE {cls.TABLE_NAME} {statement};"
+                DBMS.Database.execute(alter_sql)
 
     def save(self):
         '''
@@ -235,12 +281,10 @@ class Model():
         @return Model instance(s)
         '''
 
-        result = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
-        
-        if isinstance(result, dict):
-            return cls(**cls.normalise(result)) if len(result.keys()) else None
-        elif isinstance(result, list) or isinstance(result, tuple):
-            return cls(*result) if len(result) else None
+        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))) # type: ignore
+
+        return cls(**result) if len(result.keys()) else None
+    
         
         # query = 'SELECT '
         # if cls.SELECTED_COLUMNS:

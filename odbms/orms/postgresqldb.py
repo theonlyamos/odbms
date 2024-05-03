@@ -49,7 +49,7 @@ class PostgresqlDB(ORM):
             
         except (Exception, psycopg2.Error) as error:
             logging.error("Error connecting to PostgreSQL database:", error)
-
+    
     @staticmethod
     def execute(query, params=None):
         try:
@@ -57,11 +57,18 @@ class PostgresqlDB(ORM):
                 PostgresqlDB.cursor.execute(query, params)
             else:
                 PostgresqlDB.cursor.execute(query)
-                PostgresqlDB.db.commit()
-
+                if PostgresqlDB.cursor.description:  # Check if description is not None
+                    column_names = [desc.name for desc in PostgresqlDB.cursor.description]
+                    result = [dict(zip(column_names, row)) for row in PostgresqlDB.cursor.fetchall()]
+                    PostgresqlDB.db.commit()
+                    return result
+                else:
+                    PostgresqlDB.db.commit()
+                    return []  # Return an empty list or appropriate value for queries that do not return rows
         except (Exception, psycopg2.Error) as error:
             logging.exception(error)
             PostgresqlDB.db.rollback()
+            return []
 
     @staticmethod
     def insert(table: str, data: Dict):
@@ -77,7 +84,7 @@ class PostgresqlDB(ORM):
             PostgresqlDB.db.commit()
             new_inserts = PostgresqlDB.cursor.fetchone()
             insert_id =   new_inserts[0] if new_inserts else 0
-            return insert_id
+            return str(insert_id)
         except (Exception, psycopg2.Error) as error:
             print("Error inserting data:", error)
             PostgresqlDB.db.rollback()

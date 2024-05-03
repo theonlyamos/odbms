@@ -43,7 +43,8 @@ class SqliteDB(ORM):
             return str(SqliteDB.cursor.lastrowid)
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(f"Error: {str(e)}")
+            return 0
     
     @staticmethod
     def insert_many(tale: str, data: list[dict]):
@@ -110,7 +111,8 @@ class SqliteDB(ORM):
             SqliteDB.db.commit()
 
             resp = [x for x in SqliteDB.cursor.fetchall()]
-            return resp[0] if len(resp) else resp
+            
+            return resp[0] if len(resp) else {}
 
         except Exception as e:
             logging.error({'status': 'Error', 'message': str(e)})

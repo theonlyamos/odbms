@@ -5,6 +5,7 @@
 # @Link    : link
 # @Version : 1.0.0
 
+import logging
 import os
 from mysql import connector
 from sys import exit
@@ -64,7 +65,8 @@ class MysqlDB(ORM):
             return str(MysqlDB.cursor.lastrowid)
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(f"Error: {str(e)}")
+            return 0
     
     @staticmethod
     def update(table: str, filter: dict, data: dict):
@@ -129,7 +131,8 @@ class MysqlDB(ORM):
             return MysqlDB.cursor.fetchone()
 
         except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+            logging.error(f"Error: {str(e)}")
+            return {}
     
     @staticmethod
     def count(table: str, filter: dict = {}, columns: list = ['*'])-> int:
