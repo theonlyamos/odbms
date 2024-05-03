@@ -169,7 +169,7 @@ class Model():
             data['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
             del data["created_at"]
             del data["updated_at"]
-
+            
         if isinstance(self.id, ObjectId):
             return DBMS.Database.insert(self.TABLE_NAME, self.normalise(data, 'params'))
         
@@ -542,6 +542,7 @@ class Model():
                         content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
                     elif type(value) == dict:
                         content[key] = json.dumps(value) # type: ignore
+                
             else:
                 init_signatures = inspect.signature(cls.__init__)
             
