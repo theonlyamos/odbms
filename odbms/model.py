@@ -371,6 +371,9 @@ class Model():
         @param params
         @return List[Model]
         '''
+        if isinstance(projection, list):
+            if len(projection) and 'id' not in projection:
+                projection.append('id')  
 
         result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)) # type: ignore
 
