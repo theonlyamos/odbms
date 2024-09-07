@@ -119,7 +119,7 @@ class Model():
         if DBMS.Database.dbms != 'mongodb':
             # Fetch existing columns from the database
             fetch_columns_sql = f"SELECT column_name FROM information_schema.columns WHERE table_name='{cls.TABLE_NAME}';"
-            existing_columns = {row['column_name'] for row in DBMS.Database.execute(fetch_columns_sql)}
+            existing_columns = {row['column_name'] for row in DBMS.Database.execute(fetch_columns_sql)} # type: ignore
             default_columns = {'id', 'created_at', 'updated_at'}
             # Determine columns to add or modify and columns to drop
             specified_columns = set(changes.keys())
