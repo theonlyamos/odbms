@@ -1,28 +1,37 @@
 from datetime import datetime
-from typing import Optional, Union, get_type_hints, Any
+from typing import Optional, Union, Any, List
 import inspect
 import json
 
 from bson.objectid import ObjectId
+import inflect
+from pydantic import BaseModel, Field, ValidationError
 from .dbms import DBMS
 
-class Model():
+class Model(BaseModel):
     '''A model class'''
-    TABLE_NAME: str = ''
-    SELECTED_COLUMNS = []
-    WHERE_CLAUSE = []
-    GROUP_BY: str = ''
-    ORDER_BY = ()
-    LIMIT = 0
+    id: str = Field(default_factory=lambda: str(ObjectId()))
+    created_at: str = Field(default_factory=lambda: datetime.now().strftime("%a %b %d %Y %H:%M:%S"))
+    updated_at: str = Field(default_factory=lambda: datetime.now().strftime("%a %b %d %Y %H:%M:%S"))
 
-    def __init__(self, created_at: Optional[str] = None, updated_at: Optional[str] = None, id: Optional[str] = None):
-        self.created_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
-            if not created_at else created_at
-        self.updated_at = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S") \
-            if not updated_at else updated_at
-        self.id = ObjectId() if not id else str(id)
-
+    class Config:
+        arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str
+        }
     
+    @classmethod
+    def table_name(cls) -> str:
+        '''
+        Class method for retrieving table name of model
+
+        @params None
+        @return str Table name
+        '''
+        name = cls.__name__.lower()
+        p = inflect.engine()
+        return p.plural(name) # type: ignore
+
     @classmethod
     def create_table(cls):
         """
@@ -69,28 +78,28 @@ class Model():
                         
             columns += additional_columns.get(DBMS.Database.dbms, [])
             columns_str = ', '.join(columns)
-            table_definition = f"CREATE TABLE IF NOT EXISTS {cls.TABLE_NAME} ({columns_str});"
+            table_definition = f"CREATE TABLE IF NOT EXISTS {cls.table_name()} ({columns_str});"
             
             DBMS.Database.execute(table_definition)
             
             if DBMS.Database.dbms == 'sqlite':
-                DBMS.Database.execute(f'''CREATE TRIGGER IF NOT EXISTS update_{cls.TABLE_NAME}_timestamp
-                AFTER UPDATE ON {cls.TABLE_NAME}
+                DBMS.Database.execute(f'''CREATE TRIGGER IF NOT EXISTS update_{cls.table_name()}
+                AFTER UPDATE ON {cls.table_name()}
                 BEGIN
-                    UPDATE {cls.TABLE_NAME} SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW') WHERE id = NEW.id;
+                    UPDATE {cls.table_name()} SET updated_at = STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW') WHERE id = NEW.id;
                 END;''')
             elif DBMS.Database.dbms == 'postgresql':
-                DBMS.Database.execute(f"""CREATE OR REPLACE FUNCTION update_{cls.TABLE_NAME}_timestamp()
+                DBMS.Database.execute(f"""CREATE OR REPLACE FUNCTION update_{cls.table_name()}_timestamp()
                 RETURNS TRIGGER AS $$
                 BEGIN
                     NEW.updated_at := CURRENT_TIMESTAMP;
                     RETURN NEW;
                 END;
                 $$ LANGUAGE plpgsql;""")
-                DBMS.Database.execute(f"""CREATE TRIGGER update_{cls.TABLE_NAME}_timestamp
-                BEFORE UPDATE ON {cls.TABLE_NAME}
+                DBMS.Database.execute(f"""CREATE TRIGGER update_{cls.table_name()}_timestamp
+                BEFORE UPDATE ON {cls.table_name()}
                 FOR EACH ROW
-                EXECUTE PROCEDURE update_{cls.TABLE_NAME}_timestamp();""")
+                EXECUTE PROCEDURE update_{cls.table_name()}_timestamp();""")
     
     @staticmethod
     def get_column_type(attr_type: Any) -> str:
@@ -118,7 +127,7 @@ class Model():
         """
         if DBMS.Database.dbms != 'mongodb':
             # Fetch existing columns from the database
-            fetch_columns_sql = f"SELECT column_name FROM information_schema.columns WHERE table_name='{cls.TABLE_NAME}';"
+            fetch_columns_sql = f"SELECT column_name FROM information_schema.columns WHERE table_name='{cls.table_name()}';"
             existing_columns = {row['column_name'] for row in DBMS.Database.execute(fetch_columns_sql)} # type: ignore
             default_columns = {'id', 'created_at', 'updated_at'}
             # Determine columns to add or modify and columns to drop
@@ -152,7 +161,7 @@ class Model():
 
             # Execute all alter statements
             for statement in alter_statements:
-                alter_sql = f"ALTER TABLE {cls.TABLE_NAME} {statement};"
+                alter_sql = f"ALTER TABLE {cls.table_name()} {statement};"
                 DBMS.Database.execute(alter_sql)
 
     def save(self):
@@ -163,22 +172,27 @@ class Model():
         @return None
         '''
 
-        data = self.__dict__.copy()
-        
+        data = self.dict(exclude={'id'})
         if DBMS.Database.dbms != 'mongodb':
-            data['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
-            del data["created_at"]
-            del data["updated_at"]
-            
+            data['updated_at'] = datetime.now().strftime("%a %b %d %Y %H:%M:%S")
+        
         if isinstance(self.id, ObjectId):
-            return DBMS.Database.insert(self.TABLE_NAME, self.normalise(data, 'params'))
+            return DBMS.Database.insert(self.table_name(), self.normalise(data, 'params'))
         
-        # Update the existing record in database
-        data.pop('id', None)
-        return DBMS.Database.update(self.TABLE_NAME, self.normalise({'id': self.id}, 'params'), self.normalise(data, 'params'))
+        return DBMS.Database.update(self.table_name(), self.normalise({'id': self.id}, 'params'), self.normalise(data, 'params'))
 
-    @staticmethod
-    def insert(document):
+    @classmethod
+    def insert(cls, document):
+        '''
+        Class Method for saving documents into database
+
+        @param documents Data to be saved
+        @return Mongodb InsertManyResult
+        '''
+        return DBMS.Database.insert(cls.table_name(), document)
+        
+    @classmethod
+    def insert_many(cls, documents):
         '''
         Static Method for saving documents into database
 
@@ -188,22 +202,7 @@ class Model():
 
         data = {}
         
-        return DBMS.Database.insert(Model.TABLE_NAME, document)
-        
-        
-    
-    @staticmethod
-    def insert_many(documents):
-        '''
-        Static Method for saving documents into database
-
-        @param documents Data to be saved
-        @return Mongodb InsertManyResult
-        '''
-
-        data = {}
-        
-        return DBMS.Database.insert_many(Model.TABLE_NAME, documents)
+        return DBMS.Database.insert_many(cls.table_name(), documents)
     
     @classmethod
     def update(cls, query: dict ={}, update: dict = {}):
@@ -219,7 +218,7 @@ class Model():
         if DBMS.Database.dbms == 'mongodb':
             update['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
         
-        return DBMS.Database.update(cls.TABLE_NAME, cls.normalise(query, 'params'), cls.normalise(update, 'params'))
+        return DBMS.Database.update(cls.table_name(), cls.normalise(query, 'params'), cls.normalise(update, 'params'))
     
     @classmethod
     def remove(cls, query: dict):
@@ -230,7 +229,7 @@ class Model():
         @return None
         '''
 
-        return DBMS.Database.remove(cls.TABLE_NAME, cls.normalise(query, 'params'))
+        return DBMS.Database.remove(cls.table_name(), cls.normalise(query, 'params'))
     
     @classmethod
     def count(cls, query: dict = {})-> int|None:
@@ -241,25 +240,8 @@ class Model():
         @return int Count of Projects
         '''
 
-        return DBMS.Database.count(cls.TABLE_NAME, cls.normalise(query, 'params'))
+        return DBMS.Database.count(cls.table_name(), cls.normalise(query, 'params'))
 
-    # @classmethod
-    # def get(cls, id = None):
-    #     '''
-    #     Class Method for retrieving function(s) by _id 
-    #     or all if _id is None
-
-    #     @param _id ID of the function in database
-    #     @return Function instance(s)
-    #     '''
-
-    #     if id is None:
-    #         return [cls(**cls.normalise(elem)) for elem in DBMS.Database.find(cls.TABLE_NAME)]
-
-    #     model = DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))
-    #     print(model)
-    #     return cls(**cls.normalise(model)) if model else None
-    
     @classmethod
     def sum(cls, column: str)->int:
         '''
@@ -269,7 +251,7 @@ class Model():
         @params None
         @return int Sum of column
         '''
-        return DBMS.Database.sum(cls.TABLE_NAME, column) # type: ignore
+        return DBMS.Database.sum(cls.table_name(), column) # type: ignore
 
     @classmethod
     def get(cls, id: str):
@@ -281,46 +263,10 @@ class Model():
         @return Model instance(s)
         '''
 
-        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise({'id': id}, 'params'))) # type: ignore
-
-        return cls(**result) if len(result.keys()) else None
+        result = cls.normalise(DBMS.Database.find_one(cls.table_name(), cls.normalise({'id': id}, 'params'))) # type: ignore
+        return cls(**result) if result else None
     
         
-        # query = 'SELECT '
-        # if cls.SELECTED_COLUMNS:
-        #     query += cls.SELECTED_COLUMNS if type(cls.SELECTED_COLUMNS) is str \
-        #         else ', '.join(cls.SELECTED_COLUMNS)
-        # else:
-        #     query += "*"
-        
-        # query += f" FROM {cls.TABLE_NAME}"
-
-        # if len(cls.WHERE_CLAUSE):
-        #     query += " WHERE"
-        #     for clause in cls.WHERE_CLAUSE:
-        #         if type(clause) is str:
-        #             query += f" ({clause}) AND"
-        #         elif type(clause) is dict:
-        #             query += ' ('
-        #             for key, value in clause.items():
-        #                 query += f"{key}='{value}' AND "
-        #             query = query.rstrip('AND ').strip()
-        #             query += ') AND'
-        
-        # query = query.rstrip('AND').strip()
-        # if cls.GROUP_BY:
-        #     query += f" GROUP BY {cls.GROUP_BY}"
-        
-        # if len(cls.ORDER_BY):
-        #     query += f" ORDER BY {cls.ORDER_BY[0]} {cls.ORDER_BY[1]}" # type: ignore
-        
-        # if cls.LIMIT:
-        #     query += f" LIMIT {cls.LIMIT}"
-        
-        # cls.clear()
-        
-        # return DBMS.Database.query(query)
-    
     @classmethod
     def all(cls)->list:
         '''
@@ -331,7 +277,7 @@ class Model():
         @return List[Model] instance(s)
         '''
         data = []
-        results = DBMS.Database.find(cls.TABLE_NAME, {})
+        results = DBMS.Database.find(cls.table_name(), {})
 
         for elem in results:
             if isinstance(elem, dict):
@@ -342,7 +288,7 @@ class Model():
         return data
         
     @classmethod
-    def find(cls, params: dict, projection: Union[list,dict] = [])-> list:
+    def find(cls, params: dict, projection: Union[list,dict] = []) -> List['Model']:
         '''
         Class Method for retrieving models
         by provided parameters
@@ -352,13 +298,11 @@ class Model():
         '''
         
         data = []
-        results = DBMS.Database.find(cls.TABLE_NAME, cls.normalise(params, 'params'), projection) # type: ignore
+        results = DBMS.Database.find(cls.table_name(), cls.normalise(params, 'params'), projection) # type: ignore
 
         for elem in results:
-            if isinstance(elem, dict):
-                data.append(cls(**cls.normalise(elem)))
-            else:
-                data.append(cls(*elem))
+            normalized = cls.normalise(elem)
+            data.append(cls(**normalized))
 
         return data
     
@@ -375,9 +319,9 @@ class Model():
             if len(projection) and 'id' not in projection:
                 projection.append('id')  
 
-        result = cls.normalise(DBMS.Database.find_one(cls.TABLE_NAME, cls.normalise(params, 'params'), projection)) # type: ignore
+        result = cls.normalise(DBMS.Database.find_one(cls.table_name(), cls.normalise(params, 'params'), projection)) # type: ignore
 
-        return cls(**result) if len(result.keys()) else None
+        return cls(**result) if result else None
     
     @classmethod
     def query(cls, column: str, search: str):
@@ -389,7 +333,7 @@ class Model():
         @return Product Instance
         '''
         if DBMS.Database.dbms != 'mongodb':
-            sql = f"SELECT * from {cls.TABLE_NAME} WHERE "
+            sql = f"SELECT * from {cls.table_name()} WHERE "
             sql += f"{column} LIKE '%{search}%'"
             
             return [cls(**cls.normalise(elem)) for elem in DBMS.Database.query(sql) if elem] # type: ignore
@@ -482,7 +426,7 @@ class Model():
         @return dict() format of Function instance
         '''
         
-        data = self.__dict__.copy()
+        data = self.dict()
         
         if isinstance(data['created_at'], datetime):
             data['created_at'] = data['created_at'].strftime("%a %b %d %Y %H:%M:%S")
@@ -495,75 +439,51 @@ class Model():
         return data
     
     @classmethod
-    def normalise(cls, content: dict|None, optype: str = 'dbresult')-> dict:
-        '''
-        Static method of normalising database results\n
-        Converts _id from mongodb to id
-
-        @param optype str type of operation: dbresult or params
-        @param content Dict|List[Dict] Database result
-        @return Dict|List[List] of normalized content
-        '''
-        
+    def normalise(cls, content: dict|None, optype: str = 'dbresult') -> dict:
         if content is None:
             return {}
 
-        normalized = {}
         if DBMS.Database.dbms == 'mongodb':
             if optype == 'dbresult':
-                elem = dict(content)
-                elem['id'] = str(elem['_id'])
-                del elem['_id']
-                for key in elem.keys():
+                content = dict(content)
+                content['id'] = str(content.pop('_id'))
+                for key in content.keys():
                     if key.endswith('_id'):
-                        elem[key] = str(elem[key])
-                normalized =  elem
-                
+                        content[key] = str(content[key])
             else:
-                if 'id' in content.keys():
-                    content['_id'] = ObjectId(content['id'])
-                    del content['id']
+                if 'id' in content:
+                    content['_id'] = ObjectId(content.pop('id'))
                 for key in content.keys():
                     if key.endswith('_id'):
                         content[key] = ObjectId(content[key])
-                for key, value in content.items():
-                    if type(value) == list:
-                        content[key] = '::'.join([str(v) for v in value])
-                normalized = content
-            return normalized
+                    elif isinstance(content[key], list):
+                        content[key] = '::'.join(str(v) for v in content[key])
         else:
             if optype == 'params':
-                if '_id' in content.keys():
-                    content['id'] = str(content['_id'])
-                    del content['_id']
+                if '_id' in content:
+                    content['id'] = str(content.pop('_id'))
                 for key, value in content.items():
                     if isinstance(value, ObjectId):
                         content[key] = str(value)
-                    elif type(value) == list:
-                        content[key] = '::'.join([str(v) for v in value])
-                    elif type(value) == datetime:
+                    elif isinstance(value, list):
+                        content[key] = '::'.join(str(v) for v in value)
+                    elif isinstance(value, datetime):
                         content[key] = value.strftime("%a %b %d %Y %H:%M:%S")
-                    elif type(value) == dict:
-                        content[key] = json.dumps(value) # type: ignore
-                
+                    elif isinstance(value, dict):
+                        content[key] = json.dumps(value)
             else:
-                init_signatures = inspect.signature(cls.__init__)
-            
-                init_parameters = [param for param in init_signatures.parameters.values()
-                                if param.name != 'self']
-                
-                all_parameters = init_parameters
-                type_mapping = [str, int, float, bool, list, dict]
-                for param in all_parameters:
-                    param_name = param.name
-                    param_type = param.annotation
-                    
-                    if param_type in type_mapping:
-                        if param_type is dict:
-                            content[param_name] = json.loads(content[param_name])
-                        elif param_type is list:
-                            content[param_name] = content[param_name].split('::')
-                        else:
-                            content[param_name] = param_type(content[param_name])
-            
-        return content
+                for key, value in content.items():
+                    if isinstance(value, str) and '::' in value:
+                        content[key] = value.split('::')
+                    elif key in cls.__fields__ and cls.__fields__[key].type_ is dict:
+                        content[key] = json.loads(value)
+
+        try:
+            return cls(**content).dict()
+        except ValidationError as e:
+            print(f"Validation error: {e}")
+            return content
+
+    @classmethod
+    def from_orm(cls, obj):
+        return cls(**cls.normalise(obj))
