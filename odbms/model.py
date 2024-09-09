@@ -320,7 +320,7 @@ class Model(BaseModel):
                 projection.append('id')  
 
         result = cls.normalise(DBMS.Database.find_one(cls.table_name(), cls.normalise(params, 'params'), projection)) # type: ignore
-
+        
         return cls(**result) if result else None
     
     @classmethod
@@ -442,7 +442,7 @@ class Model(BaseModel):
     def normalise(cls, content: dict|None, optype: str = 'dbresult') -> dict:
         if content is None:
             return {}
-
+        
         if DBMS.Database.dbms == 'mongodb':
             if optype == 'dbresult':
                 content = dict(content)
@@ -456,8 +456,8 @@ class Model(BaseModel):
                 for key in content.keys():
                     if key.endswith('_id'):
                         content[key] = ObjectId(content[key])
-                    elif isinstance(content[key], list):
-                        content[key] = '::'.join(str(v) for v in content[key])
+                    # elif isinstance(content[key], list):
+                    #     content[key] = '::'.join(str(v) for v in content[key])
         else:
             if optype == 'params':
                 if '_id' in content:
@@ -477,13 +477,4 @@ class Model(BaseModel):
                         content[key] = value.split('::')
                     elif key in cls.__fields__ and cls.__fields__[key].type_ is dict:
                         content[key] = json.loads(value)
-
-        try:
-            return cls(**content).dict()
-        except ValidationError as e:
-            print(f"Validation error: {e}")
-            return content
-
-    @classmethod
-    def from_orm(cls, obj):
-        return cls(**cls.normalise(obj))
+        return content
