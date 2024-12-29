@@ -172,7 +172,7 @@ class Model(BaseModel):
         @return None
         '''
 
-        data = self.dict(exclude={'id'})
+        data = self.model_dump(exclude={'id'})
         if DBMS.Database.dbms != 'mongodb':
             data['updated_at'] = datetime.now().strftime("%a %b %d %Y %H:%M:%S")
         
@@ -429,15 +429,7 @@ class Model(BaseModel):
         @return dict() format of Function instance
         '''
         
-        data = self.dict()
-        
-        if isinstance(data['created_at'], datetime):
-            data['created_at'] = data['created_at'].strftime("%a %b %d %Y %H:%M:%S")
-            
-        if isinstance(data['updated_at'], datetime):
-            data['updated_at'] = data['updated_at'].strftime("%a %b %d %Y %H:%M:%S")
-
-        data.pop('password', None)
+        data = self.model_dump(exclude={'password'})
 
         return data
     
