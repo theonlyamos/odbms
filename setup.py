@@ -1,7 +1,7 @@
 from importlib.metadata import entry_points
 from setuptools import setup, find_packages
 
-VERSION = '0.3.7'
+VERSION = '0.3.8'
 
 with open('README.md', 'rt') as file:
     description = file.read()
@@ -34,6 +34,8 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
     ],
     entry_points={
         'console_scripts': [

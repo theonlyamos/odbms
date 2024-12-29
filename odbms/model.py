@@ -11,8 +11,8 @@ from .dbms import DBMS
 class Model(BaseModel):
     '''A model class'''
     id: str = Field(default_factory=lambda: str(ObjectId()))
-    created_at: str = Field(default_factory=lambda: datetime.now().strftime("%a %b %d %Y %H:%M:%S"))
-    updated_at: str = Field(default_factory=lambda: datetime.now().strftime("%a %b %d %Y %H:%M:%S"))
+    created_at: datetime = Field(default_factory=lambda: datetime.now)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now)
 
     class Config:
         arbitrary_types_allowed = True
@@ -214,6 +214,9 @@ class Model(BaseModel):
         '''
         if 'id' in update.keys():
             del update['id']
+            
+        if 'created_at' in update.keys():
+            del update['created_at']
 
         if DBMS.Database.dbms == 'mongodb':
             update['updated_at'] = (datetime.now()).strftime("%a %b %d %Y %H:%M:%S")
@@ -447,20 +450,20 @@ class Model(BaseModel):
             if optype == 'dbresult':
                 content = dict(content)
                 content['id'] = str(content.pop('_id'))
-                for key in content.keys():
-                    if key.endswith('_id'):
-                        content[key] = str(content[key])
+                # for key in content.keys():
+                #     if key.endswith('_id'):
+                #         content[key] = str(content[key])
             else:
-                if 'id' in content:
+                if 'id' in content.keys():
                     content['_id'] = ObjectId(content.pop('id'))
-                for key in content.keys():
-                    if key.endswith('_id'):
-                        content[key] = ObjectId(content[key])
+                # for key in content.keys():
+                #     if key.endswith('_id'):
+                #         content[key] = ObjectId(content[key])
                     # elif isinstance(content[key], list):
                     #     content[key] = '::'.join(str(v) for v in content[key])
         else:
             if optype == 'params':
-                if '_id' in content:
+                if '_id' in content.keys():
                     content['id'] = str(content.pop('_id'))
                 for key, value in content.items():
                     if isinstance(value, ObjectId):
@@ -475,6 +478,6 @@ class Model(BaseModel):
                 for key, value in content.items():
                     if isinstance(value, str) and '::' in value:
                         content[key] = value.split('::')
-                    elif key in cls.__fields__ and cls.__fields__[key].type_ is dict:
+                    elif key in cls.model_fields and isinstance(cls.model_fields[key], dict):
                         content[key] = json.loads(value)
         return content
