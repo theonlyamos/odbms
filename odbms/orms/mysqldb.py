@@ -221,6 +221,17 @@ class MysqlDB(ORM):
 
         except Exception as e:
             return {'status': 'Error', 'message': str(e)}
+    
+    @staticmethod
+    def query(query: str):
+        try:
+            MysqlDB.cursor.execute(query)
+            MysqlDB.db.commit()
+
+            return [x for x in MysqlDB.cursor.fetchall()]
+
+        except Exception as e:
+            return {'status': 'Error', 'message': str(e)}
             
     @staticmethod
     def import_from_file(filename: str):

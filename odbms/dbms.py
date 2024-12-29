@@ -86,6 +86,14 @@ class DBMS():
             
     @staticmethod
     def initialize_with_defaults(dbms, database):
+        '''
+        Initialize the database with default settings
+        
+        @param dbms: str Database system to use. Currently supports mysql and mongodb
+        @param database: str Database name
+        @return None
+        '''
+        
         settings = {}
         settings['dbms'] = dbms
         settings['host'] = '127.0.0.1'

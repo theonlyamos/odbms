@@ -11,8 +11,8 @@ from .dbms import DBMS
 class Model(BaseModel):
     '''A model class'''
     id: str = Field(default_factory=lambda: str(ObjectId()))
-    created_at: datetime = Field(default_factory=lambda: datetime.now)
-    updated_at: datetime = Field(default_factory=lambda: datetime.now)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
     class Config:
         arbitrary_types_allowed = True
