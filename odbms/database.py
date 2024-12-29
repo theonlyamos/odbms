@@ -1,85 +1,89 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Date    : 2022-08-06 17:37:00
-# @Author  : Amos Amissah (theonlyamos@gmail.com)
-# @Link    : link
-# @Version : 1.0.0
+from typing import Dict, List, Any, Optional
+import asyncio
 
-from typing import Type, Literal, Optional
-from .orms.mongodb import MongoDB
-from .orms.mysqldb import MysqlDB
-from .orms.sqlitedb import SqliteDB
-from .orms.postgresqldb import PostgresqlDB
-# from .model import Model
-
-
-class Database():
-    db: Type[MysqlDB]|Type[MongoDB]|Type[PostgresqlDB]|Type[SqliteDB]|None = None
-    dbms: str|None = None
-    # models: Type[Models] = Models()
-
-    @staticmethod
-    def initialize(dbsettings: dict, app=None):
-        Database.dbms = dbsettings['dbms']
-        if dbsettings['dbms'] == 'mongodb':
-            MongoDB.initialize(dbsettings['dbhost'], 
-                dbsettings['dbport'],
-                dbsettings['dbname'])
-            Database.db = MongoDB
-            
-        elif dbsettings['dbms'] == 'mysql':
-            MysqlDB.initialize(dbsettings['dbhost'], 
-                dbsettings['dbport'],
-                dbsettings['dbname'],
-                dbsettings['dbusername'],
-                dbsettings['dbpassword'])
-            Database.db = MysqlDB
-            
-        elif dbsettings['dbms'] == 'postgresql':
-            PostgresqlDB.initialize(dbsettings['dbhost'], 
-                dbsettings['dbport'],
-                dbsettings['dbname'],
-                dbsettings['dbusername'],
-                dbsettings['dbpassword'])
-            Database.db = PostgresqlDB
-            
-        elif dbsettings['dbms'] == 'sqlite':
-            SqliteDB.initialize(dbsettings['dbname'])
-            Database.db = SqliteDB
+class Database:
+    """Base class for database implementations."""
     
-    # @staticmethod
-    # def add_model(model: Model):
-    #     '''Add a model to be loaded as a database table'''
-    #     setattr(Database.models, model.TABLE_NAME, model)
-    #     model.Database = Database
+    def __init__(self, **kwargs):
+        """Initialize database connection."""
+        self.dbms = kwargs.get('dbms', None)
+        self.connection = None
+        self.config = kwargs
     
-    @staticmethod
-    def setup():
-        if Database.dbms in ['postgresql', 'mysql', 'sqlite']:
-            print('[-!-] Creating Database Tables')
-            print('[~] Creating users table')
-            Database.db.query('''
-            CREATE TABLE IF NOT EXISTS users
-            (
-            id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            name varchar(50) not null,
-            email varchar(100) not null,
-            password varchar(500) not null,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            );
-            ''')
-
+    def connect(self) -> None:
+        """Connect to the database."""
+        raise NotImplementedError
     
-    @staticmethod
-    def load_defaults(dbms: Literal['mysql','mongodb', 'postgresql', 'sqlite'], database: Optional[str] = None):
-        settings = {}
-        settings['dbms'] = dbms
-        settings['dbhost'] = '127.0.0.1'
-        settings['dbport'] = 3306 if dbms == 'mysql' else 27017
-        settings['dbusername'] = 'root' if dbms == 'mysql' else ''
-        settings['dbpassword'] = ''
-        if database:
-            settings['dbname'] = database
-        
-        Database.initialize(settings)
+    def disconnect(self) -> None:
+        """Disconnect from the database."""
+        raise NotImplementedError
+    
+    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """Execute a raw query."""
+        raise NotImplementedError
+    
+    def find(self, table: str, conditions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Find records matching conditions."""
+        raise NotImplementedError
+    
+    def find_one(self, table: str, conditions: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Find a single record matching conditions."""
+        raise NotImplementedError
+    
+    def insert(self, table: str, data: Dict[str, Any]) -> Any:
+        """Insert a record."""
+        raise NotImplementedError
+    
+    def insert_many(self, table: str, data: List[Dict[str, Any]]) -> int:
+        """Insert multiple records."""
+        raise NotImplementedError
+    
+    def update(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
+        """Update records matching conditions."""
+        raise NotImplementedError
+    
+    def remove(self, table: str, conditions: Dict[str, Any]) -> int:
+        """Remove records matching conditions."""
+        raise NotImplementedError
+    
+    async def execute_async(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """Execute a raw query asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.execute, query, params
+        )
+    
+    async def find_async(self, table: str, conditions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Find records matching conditions asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.find, table, conditions
+        )
+    
+    async def find_one_async(self, table: str, conditions: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Find a single record matching conditions asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.find_one, table, conditions
+        )
+    
+    async def insert_async(self, table: str, data: Dict[str, Any]) -> Any:
+        """Insert a record asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.insert, table, data
+        )
+    
+    async def insert_many_async(self, table: str, data: List[Dict[str, Any]]) -> int:
+        """Insert multiple records asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.insert_many, table, data
+        )
+    
+    async def update_async(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
+        """Update records matching conditions asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.update, table, conditions, data
+        )
+    
+    async def remove_async(self, table: str, conditions: Dict[str, Any]) -> int:
+        """Remove records matching conditions asynchronously."""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, self.remove, table, conditions
+        )

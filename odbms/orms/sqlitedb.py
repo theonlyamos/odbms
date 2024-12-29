@@ -5,223 +5,198 @@
 # @Link    : link
 # @Version : 1.0.0
 
-import os
-import logging
+from datetime import datetime
 import sqlite3
-from sqlite3 import Connection, Cursor
-from typing import Union
+from typing import Optional, Dict, Any, List
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from ..dbms import Database
 
-from .base import ORM
-
-class SqliteDB(ORM):
-    db: Connection
-    cursor: Cursor
-    dbms = 'sqlite'
+class SQLiteDB(Database):
+    """SQLite database implementation."""
     
-    @staticmethod
-    def initialize(database):
-        db = sqlite3.connect(database)
-
-        cursor = db.cursor()
-        SqliteDB.db = db
-        SqliteDB.cursor = cursor
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dbms = 'sqlite'
+        self._connection = None
+        self._cursor = None
+        self._executor = ThreadPoolExecutor(max_workers=4)  # Pool for async operations
+        self._loop = None
+        # Use a shared in-memory database
+        self._uri = 'file::memory:?cache=shared'
     
-    @staticmethod
-    def insert(table: str, data: dict):
-
-        query = f'INSERT INTO {table} ('
-        query += ', '.join(data.keys())
-        query += ") VALUES ('"
-
-        values = [str(val) for val in data.values()]
-        query += "','".join(values)
-        query += "')"
-        try:
-            SqliteDB.cursor.execute(query)
-            SqliteDB.db.commit()
-
-            return str(SqliteDB.cursor.lastrowid)
-
-        except Exception as e:
-            logging.error(f"Error: {str(e)}")
-            return 0
+    def connect(self):
+        """Connect to SQLite."""
+        if self._connection is None:
+            self._connection = sqlite3.connect(
+                self._uri if self.config.get('database', ':memory:') == ':memory:' else self.config['database'],
+                uri=True,
+                check_same_thread=False  # Allow access from other threads
+            )
+            self._connection.row_factory = sqlite3.Row
+            self._cursor = self._connection.cursor()
     
-    @staticmethod
-    def insert_many(tale: str, data: list[dict]):
-        return {}
+    def disconnect(self):
+        """Disconnect from SQLite."""
+        if self._cursor:
+            self._cursor.close()
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+            self._cursor = None
+        if self._executor:
+            self._executor.shutdown(wait=False)
+            self._executor = None
+        self._loop = None
     
-    @staticmethod
-    def update(table: str, params: dict, data: dict)-> Union[int, None]:
-
-        query = f'UPDATE {table} SET'
-        for key in data.keys():
-            query += f" {key}= ?,"
-        query = query.rstrip(',')
+    async def _ensure_loop(self):
+        """Ensure we have a valid event loop."""
+        if self._loop is None or self._loop.is_closed():
+            self._loop = asyncio.get_running_loop()
+        return self._loop
+    
+    async def _run_in_executor(self, func, *args, **kwargs):
+        """Run a function in the thread pool executor."""
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(max_workers=4)
+        loop = await self._ensure_loop()
+        return await loop.run_in_executor(self._executor, func, *args, **kwargs)
+    
+    def _get_connection(self):
+        """Get a new connection for thread-safe operations."""
+        conn = sqlite3.connect(
+            self._uri if self.config.get('database', ':memory:') == ':memory:' else self.config['database'],
+            uri=True,
+            check_same_thread=False
+        )
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """Execute a query."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params or {})
+            conn.commit()
+            return cursor
+    
+    def find(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
+        """Find records matching params."""
+        query = f"SELECT * FROM {table}"
+        if params:
+            conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
+            query += f" WHERE {conditions}"
         
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params or {})
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def find_one(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+        """Find one record matching params."""
+        query = f"SELECT * FROM {table}"
+        if params:
+            conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
+            query += f" WHERE {conditions} LIMIT 1"
         
-        parameters = list(data.values())+list(params.values())
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params or {})
+            row = cursor.fetchone()
+            return dict(row) if row else None
+    
+    def insert(self, table: str, data: dict) -> Any:
+        """Insert a record."""
+        
+        # Remove id if it's a string (MongoDB style) since SQLite uses auto-increment
 
-        try:
-            SqliteDB.cursor.execute(query, tuple(parameters))
-            SqliteDB.db.commit()
+        if 'id' in data and isinstance(data['id'], str):
+            del data['id']
+        
+        # Convert datetime strings to proper SQLite timestamp format
 
-            return SqliteDB.cursor.lastrowid
+        for key, value in data.items():
 
-        except Exception as e:
-            logging.error(str(e))
+            if isinstance(value, str) and ('_at' in key or key.endswith('date')):
+                try:
+                    # Try to parse and format as SQLite timestamp
+                    dt = datetime.fromisoformat(value)
+                    data[key] = dt.strftime('%Y-%m-%d %H:%M:%S')
+
+                except ValueError:
+                    pass  # Keep original value if parsing fails
+        
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join(f":{k}" for k in data.keys())
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, data)
+            conn.commit()
+            return cursor.lastrowid
+    
+    def insert_many(self, table: str, data: List[dict]) -> Any:
+        """Insert multiple records."""
+        if not data:
             return None
+        
+        columns = ", ".join(data[0].keys())
+        placeholders = ", ".join(f":{k}" for k in data[0].keys())
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(query, data)
+            conn.commit()
+            return cursor.rowcount
     
-    @staticmethod
-    def find(table: str, params: dict = {}, columns: list = ['*']):
-        query = f'SELECT {", ".join(columns)} FROM {table}'
-
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-            
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-            
-            return SqliteDB.cursor.fetchall()
-
-        except Exception as e:
-            logging.error({'status': 'Error', 'message': str(e)})
-            return []
+    def update(self, table: str, params: dict, data: dict) -> Any:
+        """Update records matching params."""
+        set_values = ", ".join(f"{k} = :{k}" for k in data.keys())
+        conditions = " AND ".join(f"{k} = :where_{k}" for k in params.keys())
+        query = f"UPDATE {table} SET {set_values} WHERE {conditions}"
+        
+        # Prefix param keys with 'where_' to avoid conflicts
+        params_with_prefix = {f"where_{k}": v for k, v in params.items()}
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, {**data, **params_with_prefix})
+            conn.commit()
+            return cursor.rowcount
     
-    @staticmethod
-    def find_one(table: str, params: dict = {}):
-        query = f'SELECT * FROM {table}'
+    def remove(self, table: str, params: dict) -> Any:
+        """Remove records matching params."""
+        conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
+        query = f"DELETE FROM {table} WHERE {conditions}"
         
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-
-            resp = [x for x in SqliteDB.cursor.fetchall()]
-            
-            return resp[0] if len(resp) else {}
-
-        except Exception as e:
-            logging.error({'status': 'Error', 'message': str(e)})
-            return []
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount
     
-    @staticmethod
-    def count(table: str, params: dict = {})-> int:
-        query = f'SELECT * FROM {table}'
-
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-
-            return SqliteDB.cursor.rowcount
-
-        except Exception as e:
-            logging.error(str(e))
-            return 0
+    async def find_async(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
+        """Find records matching params asynchronously."""
+        return await self._run_in_executor(self.find, table, params)
     
-    @staticmethod
-    def sum(table: str, column: str, params: dict = {})-> int:
-        query = f'SELECT SUM({column}) as sum FROM {table}'
-        
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-
-            return SqliteDB.cursor.fetchall()[0]['sum']
-
-        except Exception as e:
-            logging.error(str(e))
-            return 0
+    async def find_one_async(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+        """Find one record matching params asynchronously."""
+        return await self._run_in_executor(self.find_one, table, params)
     
-    @staticmethod
-    def execute(query: str):
-        try:
-            SqliteDB.cursor.execute(query)
-            SqliteDB.db.commit()
-
-            return [x for x in SqliteDB.cursor.fetchall()]
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+    async def insert_async(self, table: str, data: dict) -> Any:
+        """Insert a record asynchronously."""
+        return await self._run_in_executor(self.insert, table, data)
     
-    @staticmethod
-    def remove(table: str, params: dict = {}):
-        query = f'DELETE FROM {table}'
-        
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-
-            return str(SqliteDB.cursor.lastrowid)
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+    async def insert_many_async(self, table: str, data: List[dict]) -> Any:
+        """Insert multiple records asynchronously."""
+        return await self._run_in_executor(self.insert_many, table, data)
     
-    @staticmethod
-    def delete(table: str, params: dict = {}):
-        query = f'DELETE FROM {table}'
-        
-        if len(params.keys()):
-            query += ' WHERE '
-            for key, value in params.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            SqliteDB.cursor.execute(query, tuple(params.values()))
-            SqliteDB.db.commit()
-
-            return str(SqliteDB.cursor.lastrowid)
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+    async def update_async(self, table: str, params: dict, data: dict) -> Any:
+        """Update records matching params asynchronously."""
+        return await self._run_in_executor(self.update, table, params, data)
     
-    @staticmethod
-    def import_from_file(filename: str):
-        '''
-        Run Database command from file
-        
-        @param filename Name of file containing commands
-        @return Database result
-        '''
-
-        try:
-            result = None
-            with open(filename, 'rt') as file:
-                result = SqliteDB.execute(file.read())
-                
-            return result
-                
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+    async def remove_async(self, table: str, params: dict) -> Any:
+        """Remove records matching params asynchronously."""
+        return await self._run_in_executor(self.remove, table, params)

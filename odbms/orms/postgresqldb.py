@@ -1,224 +1,121 @@
-import logging
+from typing import Optional, Dict, Any, List
 import psycopg2
-from psycopg2 import sql
-from psycopg2.extensions import connection, cursor as Cursor
-from typing import Union, List, Dict
+import psycopg2.extras
+from ..dbms import Database
 
-from .base import ORM
-
-class PostgresqlDB(ORM):
-    db: connection
-    cursor: Cursor
-    dbms = 'postgresql'
-
-    @staticmethod
-    def initialize(host, port, user, password, database):
-        try:
-            # Connect to the PostgreSQL server without specifying a database
-            conn = psycopg2.connect(
-                host=host,
-                port=port,
-                user=user,
-                password=password
-            )
-            conn.autocommit = True
-            cursor = conn.cursor()
-
-            # Check if the database exists
-            cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{database}'")
-            exists = cursor.fetchone()
-
-            if not exists:
-                # If the database doesn't exist, create it
-                cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
-                logging.info(f"Database '{database}' created successfully.")
-
-            cursor.close()
-            conn.close()
-            
-            # Connect to the database
-            PostgresqlDB.db = psycopg2.connect(
-                host=host,
-                port=port,
-                database=database,
-                user=user,
-                password=password
-            )
-            PostgresqlDB.db.set_session(autocommit=False)
-            PostgresqlDB.cursor = PostgresqlDB.db.cursor()
-            
-        except (Exception, psycopg2.Error) as error:
-            logging.error("Error connecting to PostgreSQL database:", error)
+class PostgresqlDB(Database):
+    """PostgreSQL database implementation."""
     
-    @staticmethod
-    def execute(query, params=None):
-        try:
-            if params:
-                PostgresqlDB.cursor.execute(query, params)
-            else:
-                PostgresqlDB.cursor.execute(query)
-                if PostgresqlDB.cursor.description:  # Check if description is not None
-                    column_names = [desc.name for desc in PostgresqlDB.cursor.description]
-                    result = [dict(zip(column_names, row)) for row in PostgresqlDB.cursor.fetchall()]
-                    PostgresqlDB.db.commit()
-                    return result
-                else:
-                    PostgresqlDB.db.commit()
-                    return []  # Return an empty list or appropriate value for queries that do not return rows
-        except (Exception, psycopg2.Error) as error:
-            logging.exception(error)
-            PostgresqlDB.db.rollback()
-            return []
-
-    @staticmethod
-    def insert(table: str, data: Dict):
-        columns = sql.SQL(', ').join(sql.Identifier(col) for col in data.keys())
-        values = ', '.join(['%s'] * len(data))
-        sql_query = sql.SQL("INSERT INTO {} ({}) VALUES ({}) RETURNING id").format(
-            sql.Identifier(table),
-            columns,
-            sql.SQL(values)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dbms = 'postgresql'
+        self.cursor = None
+    
+    def connect(self):
+        """Connect to PostgreSQL."""
+        self.connection = psycopg2.connect(
+            host=self.config.get('host', 'localhost'),
+            port=self.config.get('port', 5432),
+            database=self.config['database'],
+            user=self.config.get('user', 'postgres'),
+            password=self.config.get('password', '')
         )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(data.values()))
-            PostgresqlDB.db.commit()
-            new_inserts = PostgresqlDB.cursor.fetchone()
-            insert_id =   new_inserts[0] if new_inserts else 0
-            return str(insert_id)
-        except (Exception, psycopg2.Error) as error:
-            print("Error inserting data:", error)
-            PostgresqlDB.db.rollback()
-            return 0
-
-    @staticmethod
-    def insert_many(table: str, data: List[Dict]):
-        columns = sql.SQL(', ').join(sql.Identifier(col) for col in data[0].keys())
-        values_template = ', '.join(['%s'] * len(data[0]))
-        values = ', '.join(['(' + values_template + ')'] * len(data))
-        sql_query = sql.SQL("INSERT INTO {} ({}) VALUES {}").format(
-            sql.Identifier(table),
-            columns,
-            sql.SQL(values)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, [value for row in data for value in row.values()])
-            PostgresqlDB.db.commit()
-            return True
-        except (Exception, psycopg2.Error) as error:
-            print("Error inserting data:", error)
-            PostgresqlDB.db.rollback()
-            return False
-
-    @staticmethod
-    def find(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
-        columns = sql.SQL(', ').join(map(sql.Identifier, projection)) if projection else sql.SQL('*')
-        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
-        sql_query = sql.SQL("SELECT {} FROM {}").format(
-            columns,
-            sql.Identifier(table),
-        )
-        if filter:
-            sql_query = sql.SQL("{} WHERE {}").format(
-                sql_query,
-                sql.SQL(conditions)
-            )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            column_names = [desc.name for desc in PostgresqlDB.cursor.description] # type: ignore
-            result = [dict(zip(column_names, row)) for row in PostgresqlDB.cursor.fetchall()]
-            PostgresqlDB.db.commit()
-            return result
-        except (Exception, psycopg2.Error) as error:
-            logging.error({'status': 'Error', 'message': str(error)})
-            PostgresqlDB.db.rollback()
-            return []
-
-    @staticmethod
-    def find_one(table: str, filter: Dict = {}, projection: Union[List, Dict] = []):
-        columns = sql.SQL(', ').join(map(sql.Identifier, projection)) if projection else sql.SQL('*')
-        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
-        sql_query = sql.SQL("SELECT {} FROM {} WHERE {} LIMIT 1").format(
-            columns,
-            sql.Identifier(table),
-            sql.SQL(conditions)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            column_names = [desc.name for desc in PostgresqlDB.cursor.description] # type: ignore
-            result = dict(zip(column_names, PostgresqlDB.cursor.fetchone())) if PostgresqlDB.cursor.rowcount > 0 else None # type: ignore
-            PostgresqlDB.db.commit()
-            
-            return result
-        except (Exception, psycopg2.Error) as error:
-            print("Error executing SQL:", error)
-            PostgresqlDB.db.rollback()
-            return {}
-
-    @staticmethod
-    def remove(table: str, filter: Dict):
-        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
-        sql_query = sql.SQL("DELETE FROM {} WHERE {}").format(
-            sql.Identifier(table),
-            sql.SQL(conditions)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            PostgresqlDB.db.commit()
-            return True
-        except (Exception, psycopg2.Error) as error:
-            print("Error removing data:", error)
-            PostgresqlDB.db.rollback()
-            return False
-
-    @staticmethod
-    def update(table: str, filter: Dict, data: Dict):
-        set_clause = ', '.join(f"{key} = %s" for key in data.keys())
-        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
-        sql_query = sql.SQL("UPDATE {} SET {} WHERE {}").format(
-            sql.Identifier(table),
-            sql.SQL(set_clause),
-            sql.SQL(conditions)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(data.values()) + list(filter.values()))
-            PostgresqlDB.db.commit()
-            return True
-        except (Exception, psycopg2.Error) as error:
-            print("Error updating data:", error)
-            PostgresqlDB.db.rollback()
-            return False
-
-    @staticmethod
-    def count(table: str, filter: Dict = {}):
-        conditions = ' AND '.join(f"{key} = %s" for key in filter.keys())
-        sql_query = sql.SQL("SELECT COUNT(*) FROM {} WHERE {}").format(
-            sql.Identifier(table),
-            sql.SQL(conditions)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(filter.values()))
-            result = PostgresqlDB.cursor.fetchone()
-            result = result[0] if result else None
-            PostgresqlDB.db.commit()
-            return result
-        except (Exception, psycopg2.Error) as error:
-            print("Error executing SQL:", error)
-            PostgresqlDB.db.rollback()
-
-    @staticmethod
-    def sum(table: str, column: str, params: Dict = {}):
-        conditions = ' AND '.join(f"{sql.Identifier(key)} = %s" for key in params.keys())
-        sql_query = sql.SQL("SELECT SUM({}) FROM {} WHERE {}").format(
-            sql.Identifier(column),
-            sql.Identifier(table),
-            sql.SQL(conditions)
-        )
-        try:
-            PostgresqlDB.cursor.execute(sql_query, list(params.values()))
-            result = PostgresqlDB.cursor.fetchone()
-            result = result[0] if result else None
-            PostgresqlDB.db.commit()
-            return result
-        except (Exception, psycopg2.Error) as error:
-            print("Error executing SQL:", error)
-            PostgresqlDB.db.rollback()
+        self.cursor = self.connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    def disconnect(self):
+        """Disconnect from PostgreSQL."""
+        if self.cursor:
+            self.cursor.close()
+        if self.connection:
+            self.connection.close()
+    
+    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """Execute a query."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        self.cursor.execute(query, params or {})
+        return self.cursor
+    
+    def find(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
+        """Find records matching params."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        query = f"SELECT * FROM {table}"
+        if params:
+            conditions = " AND ".join(f"{k} = %({k})s" for k in params.keys())
+            query += f" WHERE {conditions}"
+        
+        self.cursor.execute(query, params or {})
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    def find_one(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+        """Find one record matching params."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        query = f"SELECT * FROM {table}"
+        if params:
+            conditions = " AND ".join(f"{k} = %({k})s" for k in params.keys())
+            query += f" WHERE {conditions} LIMIT 1"
+        
+        self.cursor.execute(query, params or {})
+        # RealDictCursor returns a dict or None
+        return self.cursor.fetchone()
+    
+    def insert(self, table: str, data: dict) -> Any:
+        """Insert a record."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        columns = ", ".join(data.keys())
+        placeholders = ", ".join(f"%({k})s" for k in data.keys())
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders}) RETURNING id"
+        
+        self.cursor.execute(query, data)
+        self.connection.commit()
+        result = self.cursor.fetchone()
+        return result['id'] if result else None
+    
+    def insert_many(self, table: str, data: List[dict]) -> Any:
+        """Insert multiple records."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        if not data:
+            return None
+        
+        columns = ", ".join(data[0].keys())
+        placeholders = ", ".join(f"%({k})s" for k in data[0].keys())
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        
+        self.cursor.executemany(query, data)
+        self.connection.commit()
+        return self.cursor.rowcount
+    
+    def update(self, table: str, params: dict, data: dict) -> Any:
+        """Update records matching params."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        set_values = ", ".join(f"{k} = %({k})s" for k in data.keys())
+        conditions = " AND ".join(f"{k} = %(where_{k})s" for k in params.keys())
+        query = f"UPDATE {table} SET {set_values} WHERE {conditions}"
+        
+        # Prefix param keys with 'where_' to avoid conflicts
+        params_with_prefix = {f"where_{k}": v for k, v in params.items()}
+        self.cursor.execute(query, {**data, **params_with_prefix})
+        self.connection.commit()
+        return self.cursor.rowcount
+    
+    def remove(self, table: str, params: dict) -> Any:
+        """Remove records matching params."""
+        if self.cursor is None:
+            raise RuntimeError("Database not connected")
+        
+        conditions = " AND ".join(f"{k} = %({k})s" for k in params.keys())
+        query = f"DELETE FROM {table} WHERE {conditions}"
+        
+        self.cursor.execute(query, params)
+        self.connection.commit()
+        return self.cursor.rowcount

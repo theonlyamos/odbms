@@ -3,7 +3,7 @@ import argparse
 
 Database = None
 
-VERSION = "0.4.0"
+VERSION = "0.4.1"
 
 def start(args):
     import code
