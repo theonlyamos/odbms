@@ -253,7 +253,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
                 setattr(self, name, field.compute(self))
     
     @staticmethod
-    def normalise(content: dict|None, optype: str = 'dbresult') -> dict:
+    def normalise(content: Optional[Dict[str, Any]] = None, optype: str = 'dbresult') -> Dict[str, Any]:
         if content is None:
             return {}
         
@@ -517,7 +517,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return result
     
     @classmethod
-    def find(cls, conditions: Optional[dict] = None) -> List[Self]:
+    def find(cls, conditions: Dict[str, Any] = {}) -> List[Self]:
         """Find model instances matching the conditions."""
         if DBMS.Database is None:
             raise RuntimeError("Database not initialized")
@@ -526,18 +526,36 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return [cls(**cls.normalise(result)) for result in results]
     
     @classmethod
+    def find_one(cls, conditions: Dict[str, Any] = {}) -> Optional[Self]:
+        """Find one model instance matching the conditions."""
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        result = DBMS.Database.find_one(cls.table_name(), cls.normalise(conditions, 'params') if conditions else None) #type: ignore
+        return cls(**cls.normalise(result)) if result else None
+    
+    @classmethod
     def all(cls) -> List[Self]:
         """Get all model instances."""
         return cls.find()
     
     @classmethod
-    async def find_async(cls, conditions: Optional[dict] = None) -> List[Self]:
+    async def find_async(cls, conditions: Dict[str, Any] = {}) -> List[Self]:
         """Find model instances matching the conditions asynchronously."""
         if DBMS.Database is None:
             raise RuntimeError("Database not initialized")
         
         results = await DBMS.Database.find_async(cls.table_name(), cls.normalise(conditions, 'params') if conditions else None)
         return [cls(**cls.normalise(result)) for result in results]
+    
+    @classmethod
+    async def find_one_async(cls, conditions: Dict[str, Any] = {}) -> Optional[Self]:
+        """Find one model instance matching the conditions asynchronously."""
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        result = await DBMS.Database.find_one_async(cls.table_name(), cls.normalise(conditions, 'params') if conditions else None) #type: ignore
+        return cls(**cls.normalise(result)) if result else None
     
     @classmethod
     async def all_async(cls) -> List[Self]:
