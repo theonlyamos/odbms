@@ -118,8 +118,11 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     _after_delete_hooks_async: ClassVar[List[Callable[[Any], Coroutine[Any, Any, None]]]] = []
     
     def __init__(self, **data):
-        # Initialize dynamic fields storage
-        self._dynamic_fields: Dict[str, Any] = {}
+        # First call Pydantic's __init__ to properly initialize the model
+        super().__init__(**data)
+        
+        # Initialize _dynamic_fields
+        object.__setattr__(self, '_dynamic_fields', {})
         
         # Initialize relationships
         for name, field in self._fields.items():
@@ -129,17 +132,21 @@ class Model(BaseModel, metaclass=ModelMetaclass):
                 else:
                     setattr(self, f'_{name}_id', None)
         
-        super().__init__(**data)
+        # Process any remaining data that wasn't handled by Pydantic
+        for key, value in data.items():
+            if key not in self.__annotations__:
+                self._dynamic_fields[key] = value
     
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Override setattr to handle dynamic fields."""
-        if name not in self.__class__._fields and not name.startswith('_'):
-            self._dynamic_fields[name] = value
-        else:
+    def __setattr__(self, name, value):
+        # Check if it's a defined field in the model
+        if name in self.__annotations__:
             super().__setattr__(name, value)
+        else:
+            # Store undefined fields in _dynamic_fields
+            self._dynamic_fields[name] = value
     
-    def __getattr__(self, name: str) -> Any:
-        """Override getattr to handle dynamic fields."""
+    def __getattr__(self, name):
+        # This is only called for attributes that don't exist in normal lookup
         if name in self._dynamic_fields:
             return self._dynamic_fields[name]
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
@@ -616,3 +623,62 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         
         # Remove records
         return await DBMS.Database.remove_async(cls.table_name(), normalized_conditions)
+    
+    def save(self) -> Self:
+        '''Save the model instance to database.'''
+        # Run before_save hooks
+        self._run_hooks(self._before_save_hooks)
+        
+        # Validate fields
+        self.validate_fields()
+        
+        # Compute fields
+        self.compute_fields()
+        
+        # Update timestamps
+        self.updated_at = datetime.now()
+        
+        # Prepare data for save
+        data = self.model_dump()
+        
+        # Handle relationships
+        for name, field in self._fields.items():
+            if isinstance(field, RelationshipField):
+                if isinstance(field, (OneToMany, ManyToMany)):
+                    data[f'{name}_ids'] = getattr(self, f'_{name}_ids', [])
+                else:
+                    data[f'{name}_id'] = getattr(self, f'_{name}_id')
+                
+                if name in data:
+                    del data[name]
+        
+        # Check if this is a new record or existing one
+        existing = None
+        if self.id and not isinstance(self.id, ObjectId):
+            if DBMS.Database is None:
+                raise RuntimeError("Database not initialized")
+            existing = DBMS.Database.find_one(self.table_name(), self.normalise({'id': self.id}, 'params'))
+        
+        if not existing:
+            # This is a new record, perform insert
+            if DBMS.Database is None:
+                raise RuntimeError("Database not initialized")
+            result = DBMS.Database.insert(self.table_name(), self.normalise(data, 'params'))
+            # Update instance id if provided by database
+            if result:
+                self.id = str(result) if isinstance(result, (str, int, ObjectId)) else str(result.inserted_id)
+            
+        else:
+            # This is an existing record, perform update
+            if DBMS.Database is None:
+                raise RuntimeError("Database not initialized")
+            result = DBMS.Database.update(
+                self.table_name(),
+                self.normalise({'id': self.id}, 'params'),
+                self.normalise(data, 'params')
+            )
+        
+        # Run after_save hooks
+        self._run_hooks(self._after_save_hooks)
+        
+        return self
