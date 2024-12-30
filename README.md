@@ -1,73 +1,176 @@
-# odbms
+# ODBMS - Object Document/Relational Mapping System
 
-odbms is a Python package for managing MySQL, MongoDB, SQLite, and PostgreSQL database instances.
+A flexible and modern Python ORM supporting multiple databases (MongoDB, PostgreSQL, MySQL) with both synchronous and asynchronous operations.
 
 ## Features
 
-- Supports multiple database management systems (MySQL, MongoDB, SQLite, PostgreSQL)
-- Provides a unified interface for database operations across different DBMSs
-- Includes an ORM-like model system for easy data manipulation
-- Supports table creation, alteration, and basic CRUD operations
+- Support for multiple databases:
+  - SQLite (using sqlite3)
+  - MongoDB (using Motor)
+  - PostgreSQL (using aiopg)
+  - MySQL (using aiomysql)
+- Both synchronous and asynchronous operations
+- Connection pooling for better performance
+- Type-safe field definitions
+- Pydantic integration for validation
+- Automatic table/collection creation
+- Relationship handling
+- Computed fields
+- Flexible query interface
 
 ## Installation
 
-Install odbms using pip:
-
-```shell
-pip install odbms
+```bash
+pip install -r requirements.txt
 ```
 
-## Usage
+## Quick Start
 
 ```python
-from odbms import DBMS
+from odbms import Model, StringField, IntegerField, EmailField
+from odbms.dbms import DBMS
 
-# Initialize with default settings
-DBMS.initialize_with_defaults('sqlite', 'database_name')
+# Initialize database connection
+DBMS.initialize(
+    dbms='postgresql',  # or 'mongodb', 'mysql'
+    host='localhost',
+    port=5432,
+    database='mydb',
+    username='user',
+    password='pass'
+)
 
-# Or initialize with custom settings
-DBMS.initialize('postgresql', port=5432, username='postgres', password='', database='database_name')
-```
-
-```python
-from odbms import Model
-
+# Define your model
 class User(Model):
-    TABLE_NAME = 'users'
+    name: str = StringField()
+    email: str = EmailField()
+    age: int = IntegerField(min_value=0)
 
-    def init(self, email: str, name: str, password: str, image: str = '', gat: str ='', grt: str ='', created_at=None, updated_at=None, id=None):
-        super().init(created_at, updated_at, id)
+# Create a new user
+user = User(name='John Doe', email='john@example.com', age=30)
+await user.save_async()  # or user.save() for sync operation
 
-        self.email = email
-        self.name = name
-        self.password = password
-        self.image = image
-        self.gat = gat
-        self.grt = grt
-
-#Create the table if not mongodb (sqlite, mysql, postgresql)
-User.create_table()
+# Find users
+users = await User.find_async({'age': {'$gte': 25}})  # or User.find() for sync
 ```
 
+## Field Types
+
+- `StringField`: For text data
+- `IntegerField`: For integer values
+- `FloatField`: For floating-point numbers
+- `BooleanField`: For true/false values
+- `DateTimeField`: For timestamps
+- `EmailField`: For email addresses with validation
+- `IDField`: For primary keys/IDs
+- `ComputedField`: For dynamically computed values
+- `ListField`: For arrays/lists
+- `DictField`: For nested documents/objects
+
+## Database Operations
+
+### Synchronous Operations
+
 ```python
-# Insert a new user
-new_user = User('test@user.com', 'Test User', 'MyPassword')
-new_user.save()
-
-# Retrieve all users
-users = User.all()
-
-# Find a specific user
-user = User.find_one({'email': 'test@user.com'})
-
-# Update a user
-user.name = 'Updated Name'
+# Create
+user = User(name='John', email='john@example.com')
 user.save()
 
-# Get the json representation of the user
-user.json()
+# Read
+user = User.find_one({'email': 'john@example.com'})
+users = User.find({'age': {'$gte': 25}})
+all_users = User.all()
 
-# Delete a user
-Delete a user
-User.remove({'email': 'test@user.com'})
+# Update
+User.update({'age': {'$lt': 18}}, {'is_minor': True})
+
+# Delete
+User.remove({'status': 'inactive'})
+
+# Aggregation
+total_age = User.sum('age', {'country': 'US'})
 ```
+
+### Asynchronous Operations
+
+```python
+# Create
+user = User(name='Jane', email='jane@example.com')
+await user.save_async()
+
+# Read
+user = await User.find_one_async({'email': 'jane@example.com'})
+users = await User.find_async({'age': {'$gte': 25}})
+all_users = await User.all_async()
+
+# Update
+await User.update_async({'age': {'$lt': 18}}, {'is_minor': True})
+
+# Delete
+await User.remove_async({'status': 'inactive'})
+
+# Aggregation
+total_age = await User.sum_async('age', {'country': 'US'})
+```
+
+## Relationships
+
+```python
+class Post(Model):
+    title: str = StringField()
+    content: str = StringField()
+    author_id: str = IDField()
+
+class User(Model):
+    name: str = StringField()
+    posts: List[Post] = ListField(model=Post)
+
+# Create related records
+user = User(name='John')
+await user.save_async()
+
+post = Post(title='Hello', content='World', author_id=user.id)
+await post.save_async()
+
+# Access relationships
+user_posts = await user.posts  # Automatically fetches related posts
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+pytest tests/
+```
+
+The test suite includes comprehensive tests for:
+
+- All database operations (CRUD)
+- Both sync and async operations
+- Field validations
+- Relationships
+- Computed fields
+- Aggregations
+
+## Requirements
+
+- Python 3.7+
+- pydantic >= 2.0.0
+- motor >= 3.3.0 (for MongoDB)
+- aiopg >= 1.4.0 (for PostgreSQL)
+- aiomysql >= 0.2.0 (for MySQL)
+- inflect >= 5.0.0
+- python-dotenv >= 0.19.0
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+MIT License

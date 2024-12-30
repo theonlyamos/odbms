@@ -117,6 +117,39 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     _before_delete_hooks_async: ClassVar[List[Callable[[Any], Coroutine[Any, Any, None]]]] = []
     _after_delete_hooks_async: ClassVar[List[Callable[[Any], Coroutine[Any, Any, None]]]] = []
     
+    def __init__(self, **data):
+        # Initialize dynamic fields storage
+        self._dynamic_fields: Dict[str, Any] = {}
+        
+        # Initialize relationships
+        for name, field in self._fields.items():
+            if isinstance(field, RelationshipField):
+                if isinstance(field, (OneToMany, ManyToMany)):
+                    setattr(self, f'_{name}_ids', [])
+                else:
+                    setattr(self, f'_{name}_id', None)
+        
+        super().__init__(**data)
+    
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Override setattr to handle dynamic fields."""
+        if name not in self.__class__._fields and not name.startswith('_'):
+            self._dynamic_fields[name] = value
+        else:
+            super().__setattr__(name, value)
+    
+    def __getattr__(self, name: str) -> Any:
+        """Override getattr to handle dynamic fields."""
+        if name in self._dynamic_fields:
+            return self._dynamic_fields[name]
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+    
+    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+        """Override model_dump to include dynamic fields."""
+        data = super().model_dump(*args, **kwargs)
+        data.update(self._dynamic_fields)
+        return data
+    
     @classmethod
     def before_save(cls, func: Callable[[Any], None]) -> Callable[[Any], None]:
         """Decorator to register a before_save hook."""
@@ -145,86 +178,6 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         """Run a list of hooks."""
         for hook in hooks:
             hook(self)
-    
-    def __init__(self, **data):
-        # Initialize relationships
-        for name, field in self._fields.items():
-            if isinstance(field, RelationshipField):
-                if isinstance(field, (OneToMany, ManyToMany)):
-                    setattr(self, f'_{name}_ids', [])
-                else:
-                    setattr(self, f'_{name}_id', None)
-        
-        super().__init__(**data)
-    
-    def model_dump(self, exclude: Optional[set] = None) -> dict:
-        """Convert model to dictionary, excluding relationship fields."""
-        data = super().model_dump(exclude=exclude)
-        
-        # Remove relationship fields from data
-        for name, field in self._fields.items():
-            if isinstance(field, RelationshipField):
-                if name in data:
-                    del data[name]
-                # Add relationship ID field
-                if isinstance(field, (OneToMany, ManyToMany)):
-                    data[f'{name}_ids'] = getattr(self, f'_{name}_ids', [])
-                else:
-                    data[f'{name}_id'] = getattr(self, f'_{name}_id')
-        
-        return data
-    
-    def save(self) -> Self:
-        '''Save the model instance to database.'''
-        # Run before_save hooks
-        self._run_hooks(self._before_save_hooks)
-        
-        # Validate fields
-        self.validate_fields()
-        
-        # Compute fields
-        self.compute_fields()
-        
-        # Update timestamps
-        now = datetime.now()
-        if self.created_at is None:
-            self.created_at = now
-        self.updated_at = now
-        
-        # Prepare data for save
-        data = self.model_dump(exclude={'id'})
-        
-        # Check if this is a new record or existing one
-        existing = None
-        if self.id and not isinstance(self.id, ObjectId):
-            if DBMS.Database is None:
-                raise RuntimeError("Database not initialized")
-            existing = DBMS.Database.find_one(self.table_name(), self.normalise({'id': self.id}, 'params'))
-        
-        if not existing:
-            # This is a new record, perform insert
-            if DBMS.Database is None:
-                raise RuntimeError("Database not initialized")
-            result = DBMS.Database.insert(self.table_name(), self.normalise(data, 'params'))
-            # Update instance id if provided by database
-            if result and hasattr(result, 'inserted_id'):  # type: ignore
-                self.id = str(result.inserted_id)  # type: ignore
-            else:
-                self.id = result
-        else:
-            # This is an existing record, perform update
-            if DBMS.Database is None:
-                raise RuntimeError("Database not initialized")
-            result = DBMS.Database.update(
-                self.table_name(),
-                self.normalise({'id': self.id}, 'params'),
-                self.normalise(data, 'params')
-            )
-        
-        # Run after_save hooks
-        self._run_hooks(self._after_save_hooks)
-        
-        return self
     
     @classmethod
     def table_name(cls) -> str:
@@ -269,17 +222,39 @@ class Model(BaseModel, metaclass=ModelMetaclass):
                     content['_id'] = ObjectId(content.pop('id'))
         else:
             if optype == 'params':
-                if '_id' in content:
-                    content['id'] = str(content.pop('_id'))
+                # Handle MongoDB-style operators for SQL databases
+                normalized = {}
                 for key, value in content.items():
-                    if isinstance(value, ObjectId):
-                        content[key] = str(value)
-                    elif isinstance(value, list):
-                        content[key] = '::'.join(str(v) for v in value)
-                    elif isinstance(value, datetime):
-                        content[key] = value.isoformat()
-                    elif isinstance(value, dict):
-                        content[key] = json.dumps(value)
+                    if isinstance(value, dict) and all(k.startswith('$') for k in value.keys()):
+                        # Convert MongoDB operators to SQL
+                        for op, val in value.items():
+                            if op == '$lt':
+                                normalized[f"{key} < ?"] = val
+                            elif op == '$lte':
+                                normalized[f"{key} <= ?"] = val
+                            elif op == '$gt':
+                                normalized[f"{key} > ?"] = val
+                            elif op == '$gte':
+                                normalized[f"{key} >= ?"] = val
+                            elif op == '$ne':
+                                normalized[f"{key} != ?"] = val
+                            elif op == '$in':
+                                normalized[f"{key} IN ?"] = tuple(val)
+                            elif op == '$nin':
+                                normalized[f"{key} NOT IN ?"] = tuple(val)
+                    else:
+                        # Handle normal key-value pairs
+                        if isinstance(value, ObjectId):
+                            normalized[key] = str(value)
+                        elif isinstance(value, list):
+                            normalized[key] = '::'.join(str(v) for v in value)
+                        elif isinstance(value, datetime):
+                            normalized[key] = value.isoformat()
+                        elif isinstance(value, dict):
+                            normalized[key] = json.dumps(value)
+                        else:
+                            normalized[key] = value
+                return normalized
             else:
                 for key, value in content.items():
                     if isinstance(value, str) and '::' in value:
@@ -522,7 +497,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         if DBMS.Database is None:
             raise RuntimeError("Database not initialized")
         
-        results = DBMS.Database.find(cls.table_name(), cls.normalise(conditions, 'params') if conditions else None)
+        results = DBMS.Database.find(cls.table_name(), cls.normalise(conditions, 'params') if conditions else {})
         return [cls(**cls.normalise(result)) for result in results]
     
     @classmethod
@@ -545,7 +520,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         if DBMS.Database is None:
             raise RuntimeError("Database not initialized")
         
-        results = await DBMS.Database.find_async(cls.table_name(), cls.normalise(conditions, 'params') if conditions else None)
+        results = await DBMS.Database.find_async(cls.table_name(), cls.normalise(conditions, 'params') if conditions else {})
         return [cls(**cls.normalise(result)) for result in results]
     
     @classmethod
@@ -561,3 +536,83 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     async def all_async(cls) -> List[Self]:
         """Get all model instances asynchronously."""
         return await cls.find_async()
+    
+    @classmethod
+    def update(cls, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
+        """Update model instances matching the conditions.
+        
+        Args:
+            conditions: Dictionary of conditions to match
+            data: Dictionary of fields to update. Can include fields not defined in the model.
+            
+        Returns:
+            Number of records updated
+        """
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Normalize conditions and data
+        normalized_conditions = cls.normalise(conditions, 'params')
+        normalized_data = cls.normalise(data, 'params')
+        
+        # Update records
+        return DBMS.Database.update(cls.table_name(), normalized_conditions, normalized_data)
+    
+    @classmethod
+    def remove(cls, conditions: Dict[str, Any]) -> int:
+        """Remove model instances matching the conditions.
+        
+        Args:
+            conditions: Dictionary of conditions to match
+            
+        Returns:
+            Number of records removed
+        """
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Normalize conditions
+        normalized_conditions = cls.normalise(conditions, 'params')
+        
+        # Remove records
+        return DBMS.Database.remove(cls.table_name(), normalized_conditions)
+    
+    @classmethod
+    async def update_async(cls, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
+        """Update model instances matching the conditions asynchronously.
+        
+        Args:
+            conditions: Dictionary of conditions to match
+            data: Dictionary of fields to update. Can include fields not defined in the model.
+            
+        Returns:
+            Number of records updated
+        """
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Normalize conditions and data
+        normalized_conditions = cls.normalise(conditions, 'params')
+        normalized_data = cls.normalise(data, 'params')
+        
+        # Update records
+        return await DBMS.Database.update_async(cls.table_name(), normalized_conditions, normalized_data)
+    
+    @classmethod
+    async def remove_async(cls, conditions: Dict[str, Any]) -> int:
+        """Remove model instances matching the conditions asynchronously.
+        
+        Args:
+            conditions: Dictionary of conditions to match
+            
+        Returns:
+            Number of records removed
+        """
+        if DBMS.Database is None:
+            raise RuntimeError("Database not initialized")
+        
+        # Normalize conditions
+        normalized_conditions = cls.normalise(conditions, 'params')
+        
+        # Remove records
+        return await DBMS.Database.remove_async(cls.table_name(), normalized_conditions)

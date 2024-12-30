@@ -1,253 +1,201 @@
-#!python3
-# -*- coding: utf-8 -*-
-# @Date    : 2022-07-22 11:42:39
-# @Author  : Amos Amissah (theonlyamos@gmai.com)
-# @Link    : link
-# @Version : 1.0.0
-
 import logging
 import os
-from mysql import connector
 from sys import exit
+from typing import Dict, List, Any, Optional, Union, Type, cast
+import asyncio
+import aiomysql
+from aiomysql import Pool, Connection, DictCursor
 
 from .base import ORM
 
 class MysqlDB(ORM):
-    db = None
-    dbms = 'mysql'
-    cursor = None
-    database_exists = True
-    
-    @staticmethod
-    def connect(dbsettings: dict):
+    _db: Optional[Connection] = None
+    _dbms: str = 'mysql'
+    _pool: Optional[Pool] = None
+    _loop: Optional[asyncio.AbstractEventLoop] = None
+
+    @classmethod
+    def connect(cls, dbsettings: dict) -> None:
         '''Connection method'''
+        cls._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(cls._loop)
+        
         try:
-            return connector.connect(**dbsettings, auth_plugin='mysql_native_password')
+            cls._pool = cls._loop.run_until_complete(aiomysql.create_pool(
+                host=dbsettings.get('host', 'localhost'),
+                port=dbsettings.get('port', 3306),
+                user=dbsettings['user'],
+                password=dbsettings['password'],
+                db=dbsettings.get('database'),
+                autocommit=True
+            ))
         except Exception as e:
             if 'Unknown database' in str(e):
-                MysqlDB.database_exists = False
+                # Try connecting without database to create it
+                dbsettings = dbsettings.copy()
                 del dbsettings['database']
-                return connector.connect(**dbsettings, auth_plugin='mysql_native_password')
+                cls._pool = cls._loop.run_until_complete(aiomysql.create_pool(
+                    host=dbsettings.get('host', 'localhost'),
+                    port=dbsettings.get('port', 3306),
+                    user=dbsettings['user'],
+                    password=dbsettings['password'],
+                    autocommit=True
+                ))
             else:
                 print(str(e))
                 exit(1)
     
-    @staticmethod
-    def initialize(host, port, username, password, database):
-        dbsettings = {
-            'host': host,
-            'port': port,
-            'user': username,
-            'password': password,
-            'database': database
-        }
-
-        db = MysqlDB.connect(dbsettings)
-
-        cursor = db.cursor(buffered=True, dictionary=True)
-        MysqlDB.db = db
-        MysqlDB.cursor = cursor
+    @classmethod
+    def disconnect(cls) -> None:
+        """Disconnect from MySQL."""
+        if cls._pool:
+            cls._pool.close()
+            if cls._loop:
+                cls._loop.run_until_complete(cls._pool.wait_closed())
+        if cls._loop:
+            cls._loop.close()
+            cls._loop = None
     
-    @staticmethod
-    def insert(table: str, data: dict):
+    @classmethod
+    def _run_sync(cls, coro):
+        """Run coroutine synchronously."""
+        if cls._loop is None or cls._loop.is_closed():
+            cls._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(cls._loop)
+        return cls._loop.run_until_complete(coro)
+
+    @classmethod
+    def insert(cls, table: str, data: dict) -> Union[str, int]:
+        """Insert a record."""
+        return cls._run_sync(cls.insert_async(table, data))
+            
+    @classmethod
+    def find(cls, table: str, filter: dict = {}, columns: list = ['*']) -> List[Dict[str, Any]]:
+        """Find records matching filter."""
+        return cls._run_sync(cls.find_async(table, filter, columns))
+            
+    @classmethod
+    def find_one(cls, table: str, filter: dict = {}, columns: list = ['*']) -> Optional[Dict[str, Any]]:
+        """Find one record matching filter."""
+        return cls._run_sync(cls.find_one_async(table, filter, columns))
+            
+    @classmethod
+    def update(cls, table: str, filter: dict, data: dict) -> int:
+        """Update records matching filter."""
+        return cls._run_sync(cls.update_async(table, filter, data))
+            
+    @classmethod
+    def remove(cls, table: str, filter: dict) -> int:
+        """Remove records matching filter."""
+        return cls._run_sync(cls.remove_async(table, filter))
+
+    @classmethod
+    def sum(cls, table: str, column: str, filter: dict = {}) -> Union[int, float]:
+        """Sum values in a column."""
+        return cls._run_sync(cls.sum_async(table, column, filter))
+
+    @classmethod
+    async def insert_async(cls, table: str, data: dict) -> Union[str, int]:
+        """Insert a record asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
 
         query = f'INSERT INTO {table}('
         query += ', '.join(data.keys())
-        query += ") VALUES('"
+        query += ") VALUES(%s" + ", %s" * (len(data) - 1) + ")"
 
-        values = [str(val) for val in data.values()]
-        query += "','".join(values)
-        query += "')"
-        try:
-            MysqlDB.cursor.execute(query)
-            MysqlDB.db.commit()
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor(DictCursor) as cur:
+                await cur.execute(query, tuple(data.values()))
+                return cur.lastrowid or 0
 
-            return str(MysqlDB.cursor.lastrowid)
+    @classmethod
+    async def find_async(cls, table: str, filter: dict = {}, columns: list = ['*']) -> List[Dict[str, Any]]:
+        """Find records matching filter asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
 
-        except Exception as e:
-            logging.error(f"Error: {str(e)}")
-            return 0
-    
-    @staticmethod
-    def update(table: str, filter: dict, data: dict):
+        query = f'SELECT {", ".join(columns)} FROM {table}'
+        if filter:
+            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            query += f' WHERE {conditions}'
 
-        query = f'UPDATE {table} SET'
-        for key in data.keys():
-            query += f" {key}= ?,"
-        query = query.rstrip(',')
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor(DictCursor) as cur:
+                await cur.execute(query, tuple(filter.values()))
+                results = await cur.fetchall()
+                return [dict(row) for row in results]
+
+    @classmethod
+    async def find_one_async(cls, table: str, filter: dict = {}, columns: list = ['*']) -> Optional[Dict[str, Any]]:
+        """Find one record matching filter asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
+
+        query = f'SELECT {", ".join(columns)} FROM {table}'
+        if filter:
+            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            query += f' WHERE {conditions}'
+        query += ' LIMIT 1'
+
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor(DictCursor) as cur:
+                await cur.execute(query, tuple(filter.values()))
+                result = await cur.fetchone()
+                return dict(result) if result else None
+
+    @classmethod
+    async def update_async(cls, table: str, filter: dict, data: dict) -> int:
+        """Update records matching filter asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
+
+        set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
+        query = f'UPDATE {table} SET {set_clause}'
         
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        parameters = list(data.values())+list(filter.values())
+        params = list(data.values())
+        if filter:
+            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            query += f' WHERE {conditions}'
+            params.extend(filter.values())
 
-        try:
-            MysqlDB.cursor.execute(query, tuple(parameters))
-            MysqlDB.db.commit()
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, tuple(params))
+                return cur.rowcount
 
-            return str(MysqlDB.cursor.lastrowid)
+    @classmethod
+    async def remove_async(cls, table: str, filter: dict) -> int:
+        """Remove records matching filter asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
 
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def find(table: str, filter: dict = {}, columns: list = ['*']):
-        columns = ', '.join(columns)
-        query = f'SELECT {columns} FROM {table}'
-        
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
+        query = f'DELETE FROM {table}'
+        if filter:
+            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            query += f' WHERE {conditions}'
 
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, tuple(filter.values()))
+                return cur.rowcount
 
-            return [x for x in MysqlDB.cursor.fetchall()]
+    @classmethod
+    async def sum_async(cls, table: str, column: str, filter: dict = {}) -> Union[int, float]:
+        """Sum values in a column asynchronously."""
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
 
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def find_one(table: str, filter: dict = {}, columns: list = ['*']):
-        columns = ', '.join(columns)
-        query = f'SELECT {columns} FROM {table}'
-        
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key}= ?,"
-            query = query.rstrip(',')
-        
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
+        query = f'SELECT SUM({column}) as total FROM {table}'
+        if filter:
+            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            query += f' WHERE {conditions}'
 
-            return MysqlDB.cursor.fetchone()
-
-        except Exception as e:
-            logging.error(f"Error: {str(e)}")
-            return {}
-    
-    @staticmethod
-    def count(table: str, filter: dict = {}, columns: list = ['*'])-> int:
-        columns = ', '.join(columns)
-        query = f'SELECT {columns} FROM {table}'
-
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
-
-            return MysqlDB.cursor.rowcount
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def sum(table: str, column: str, filter: dict = {}):
-        query = f'SELECT SUM({column}) as sum FROM {table}'
-        
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
-
-            return MysqlDB.cursor.fetchall()[0]['sum']
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def query(query: str):
-        try:
-            MysqlDB.cursor.execute(query)
-            MysqlDB.db.commit()
-
-            return [x for x in MysqlDB.cursor.fetchall()]
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def remove(table: str, filter: dict):
-        query = f'DELETE FROM {table} WHERE '
-        
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
-
-            return str(MysqlDB.cursor.lastrowid)
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def delete(table: str, filter: dict):
-        query = f'DELETE FROM {table} WHERE '
-        
-        if len(filter.keys()):
-            query += ' WHERE '
-            for key, value in filter.items():
-                query += f"{key} = ?,"
-            query = query.rstrip(',')
-        
-        try:
-            MysqlDB.cursor.execute(query, tuple(filter.values()))
-            MysqlDB.db.commit()
-
-            return str(MysqlDB.cursor.lastrowid)
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-    
-    @staticmethod
-    def query(query: str):
-        try:
-            MysqlDB.cursor.execute(query)
-            MysqlDB.db.commit()
-
-            return [x for x in MysqlDB.cursor.fetchall()]
-
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
-            
-    @staticmethod
-    def import_from_file(filename: str):
-        '''
-        Run Database command from file
-        
-        @param filename Name of file containing commands
-        @return Database result
-        '''
-
-        try:
-            result = None
-            with open(filename, 'rt') as file:
-                result = MysqlDB.query(file.read())
-                
-            return result
-                
-        except Exception as e:
-            return {'status': 'Error', 'message': str(e)}
+        async with cls._pool.acquire() as conn:
+            async with conn.cursor(DictCursor) as cur:
+                await cur.execute(query, tuple(filter.values()))
+                result = await cur.fetchone()
+                if result:
+                    total = result['total']
+                    return float(total) if total is not None else 0
+                return 0

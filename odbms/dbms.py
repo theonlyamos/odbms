@@ -1,20 +1,14 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# @Date    : 2022-08-06 17:37:00
-# @Author  : Amos Amissah (theonlyamos@gmail.com)
-# @Link    : link
-# @Version : 1.0.0
-
 from typing import Optional, Type, Union
 from .database import Database
 from .orms.mongodb import MongoDB
 from .orms.sqlitedb import SQLiteDB
 from .orms.postgresqldb import PostgresqlDB
+from .orms.mysqldb import MysqlDB
 
 class DBMS:
     """Database Management System class."""
     
-    Database: Optional[Union[MongoDB, SQLiteDB, PostgresqlDB]] = None
+    Database: Optional[Union[MongoDB, SQLiteDB, PostgresqlDB, MysqlDB]] = None
     
     @classmethod
     def initialize(cls, dbms: str, database: str, host: str = 'localhost', port: Optional[int] = None, 
@@ -33,14 +27,26 @@ class DBMS:
             cls.Database.connect()
             cls.Database.dbms = 'sqlite'
         elif dbms == 'postgresql':
-            cls.Database = PostgresqlDB(
-                host=host,
-                port=port or 5432,
-                database=database,
-                username=username,
-                password=password
-            )
-            cls.Database.connect()
+            cls.Database = PostgresqlDB()
+            dbsettings = {
+                'host': host,
+                'port': port or 5432,
+                'database': database,
+                'user': username,
+                'password': password
+            }
+            cls.Database.connect(dbsettings=dbsettings)
             cls.Database.dbms = 'postgresql'
+        elif dbms == 'mysql':
+            cls.Database = MysqlDB()
+            dbsettings = {
+                'host': host,
+                'port': port or 3306,
+                'database': database,
+                'user': username,
+                'password': password
+            }
+            cls.Database.connect(dbsettings=dbsettings)
+            cls.Database.dbms = 'mysql'
         else:
             raise ValueError(f"Unsupported database type: {dbms}")

@@ -346,3 +346,62 @@ async def test_find_async_and_all_async(test_data):
     all_users = await User.all_async()
     assert len(all_users) == 3
     assert {user.name for user in all_users} == {'John Doe', 'Jane Doe', 'Bob Smith'} 
+
+def test_update_and_remove_class_methods(test_data):
+    """Test update and remove class methods."""
+    # Create multiple users
+    users = [
+        User(name='John Doe', email='john@example.com', age=30),
+        User(name='Jane Doe', email='jane@example.com', age=25),
+        User(name='Bob Smith', email='bob@example.com', age=35)
+    ]
+    for user in users:
+        user.save()
+    
+    # Test update method
+    updated = User.update({'age': {'$gte': 30}}, {'name': 'Senior User'})
+    assert updated == 2  # Should update 2 records
+    
+    # Verify updates
+    senior_users = User.find({'name': 'Senior User'})
+    assert len(senior_users) == 2
+    assert all(user.age is not None and user.age >= 30 for user in senior_users)
+    
+    # Test remove method
+    removed = User.remove({'age': 25})
+    assert removed == 1  # Should remove 1 record
+    
+    # Verify removal
+    remaining_users = User.all()
+    assert len(remaining_users) == 2
+    assert all(user.age is not None and user.age >= 30 for user in remaining_users)
+
+@pytest.mark.asyncio
+async def test_update_and_remove_async_class_methods(test_data):
+    """Test update_async and remove_async class methods."""
+    # Create multiple users
+    users = [
+        User(name='John Doe', email='john@example.com', age=30),
+        User(name='Jane Doe', email='jane@example.com', age=25),
+        User(name='Bob Smith', email='bob@example.com', age=35)
+    ]
+    for user in users:
+        await user.save_async()
+    
+    # Test update_async method
+    updated = await User.update_async({'age': {'$gte': 30}}, {'name': 'Senior User'})
+    assert updated == 2  # Should update 2 records
+    
+    # Verify updates
+    senior_users = await User.find_async({'name': 'Senior User'})
+    assert len(senior_users) == 2
+    assert all(user.age is not None and user.age >= 30 for user in senior_users)
+    
+    # Test remove_async method
+    removed = await User.remove_async({'age': 25})
+    assert removed == 1  # Should remove 1 record
+    
+    # Verify removal
+    remaining_users = await User.all_async()
+    assert len(remaining_users) == 2
+    assert all(user.age is not None and user.age >= 30 for user in remaining_users) 
