@@ -138,7 +138,7 @@ class ORM:
             results = self._execute_sql(conn, sql, tuple(params.values()))
             return results[0]['total'] if results else 0
 
-    def execute(self, query: str, params: tuple = ()):
+    def query(self, query: str, params: tuple = ()):
         """Execute raw SQL query."""
         if self.dbms == 'mongodb':
             return None  # MongoDB doesn't support SQL

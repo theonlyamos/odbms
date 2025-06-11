@@ -1,9 +1,11 @@
-from typing import Optional, Type, Union
+import asyncio
+from pathlib import Path
 from .database import Database
 from .orms.mongodb import MongoDB
-from .orms.sqlitedb import SQLiteDB
-from .orms.postgresqldb import PostgresqlDB
 from .orms.mysqldb import MysqlDB
+from .orms.sqlitedb import SQLiteDB
+from typing import Optional, Type, Union
+from .orms.postgresqldb import PostgresqlDB
 
 class DBMS:
     """Database Management System class."""
@@ -23,7 +25,9 @@ class DBMS:
             cls.Database.connect()
             cls.Database.dbms = 'mongodb'
         elif dbms == 'sqlite':
-            cls.Database = SQLiteDB(database=database)
+            database_path = Path(database)
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+            cls.Database = SQLiteDB(database=database_path)
             cls.Database.connect()
             cls.Database.dbms = 'sqlite'
         elif dbms == 'postgresql':
@@ -35,7 +39,8 @@ class DBMS:
                 'user': username,
                 'password': password
             }
-            cls.Database.connect(dbsettings=dbsettings)
+            event_loop = asyncio.get_event_loop()
+            event_loop.run_until_complete(cls.Database.connect(dbsettings=dbsettings))
             cls.Database.dbms = 'postgresql'
         elif dbms == 'mysql':
             cls.Database = MysqlDB()

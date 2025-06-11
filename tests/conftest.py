@@ -11,7 +11,7 @@ def database():
     
     # Create tables
     if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
-        DBMS.Database.execute("""
+        DBMS.Database.query("""
             CREATE TABLE IF NOT EXISTS addresses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 street TEXT NOT NULL,
@@ -21,7 +21,7 @@ def database():
             )
         """)
         
-        DBMS.Database.execute("""
+        DBMS.Database.query("""
             CREATE TABLE IF NOT EXISTS posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
@@ -32,7 +32,7 @@ def database():
             )
         """)
         
-        DBMS.Database.execute("""
+        DBMS.Database.query("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -50,9 +50,9 @@ def database():
     # Cleanup
     if DBMS.Database is not None:
         if DBMS.Database.dbms != 'mongodb':
-            DBMS.Database.execute("DROP TABLE IF EXISTS users")
-            DBMS.Database.execute("DROP TABLE IF EXISTS posts")
-            DBMS.Database.execute("DROP TABLE IF EXISTS addresses")
+            DBMS.Database.query("DROP TABLE IF EXISTS users")
+            DBMS.Database.query("DROP TABLE IF EXISTS posts")
+            DBMS.Database.query("DROP TABLE IF EXISTS addresses")
         else:
             DBMS.Database.remove('users', {})
             DBMS.Database.remove('posts', {})

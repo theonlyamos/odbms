@@ -1,13 +1,6 @@
-#!python3
-# -*- coding: utf-8 -*-
-# @Date    : 2022-10-23 10:02:39
-# @Author  : Amos Amissah (theonlyamos@gmai.com)
-# @Link    : link
-# @Version : 1.0.0
-
 from datetime import datetime
 import sqlite3
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from ..dbms import Database
@@ -72,7 +65,8 @@ class SQLiteDB(Database):
         conn.row_factory = sqlite3.Row
         return conn
     
-    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    
+    async def query(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute a query."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -80,7 +74,7 @@ class SQLiteDB(Database):
             conn.commit()
             return cursor
     
-    def find(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
+    async def find(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
         """Find records matching params."""
         query = f"SELECT * FROM {table}"
         if params:
@@ -92,7 +86,7 @@ class SQLiteDB(Database):
             cursor.execute(query, params or {})
             return [dict(row) for row in cursor.fetchall()]
     
-    def find_one(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
+    async def find_one(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
         """Find one record matching params."""
         query = f"SELECT * FROM {table}"
         if params:
@@ -105,24 +99,20 @@ class SQLiteDB(Database):
             row = cursor.fetchone()
             return dict(row) if row else None
     
-    def insert(self, table: str, data: dict) -> Any:
+    async def insert_one(self, table: str, data: dict) -> Any:
         """Insert a record."""
         
         # Remove id if it's a string (MongoDB style) since SQLite uses auto-increment
-
         if 'id' in data and isinstance(data['id'], str):
             del data['id']
         
         # Convert datetime strings to proper SQLite timestamp format
-
         for key, value in data.items():
-
             if isinstance(value, str) and ('_at' in key or key.endswith('date')):
                 try:
                     # Try to parse and format as SQLite timestamp
                     dt = datetime.fromisoformat(value)
                     data[key] = dt.strftime('%Y-%m-%d %H:%M:%S')
-
                 except ValueError:
                     pass  # Keep original value if parsing fails
         
@@ -151,7 +141,7 @@ class SQLiteDB(Database):
             conn.commit()
             return cursor.rowcount
     
-    def update(self, table: str, params: dict, data: dict) -> Any:
+    async def update_many(self, table: str, params: dict, data: dict) -> Any:
         """Update records matching params."""
         set_values = ", ".join(f"{k} = :{k}" for k in data.keys())
         conditions = " AND ".join(f"{k} = :where_{k}" for k in params.keys())
@@ -166,7 +156,33 @@ class SQLiteDB(Database):
             conn.commit()
             return cursor.rowcount
     
-    def remove(self, table: str, params: dict) -> Any:
+    async def update_one(self, table: str, params: dict, data: dict) -> Any:
+        """Update a single record matching params."""
+        set_values = ", ".join(f"{k} = :{k}" for k in data.keys())
+        conditions = " AND ".join(f"{k} = :where_{k}" for k in params.keys())
+        query = f"UPDATE {table} SET {set_values} WHERE rowid IN (SELECT rowid FROM {table} WHERE {conditions} LIMIT 1)"
+
+        # Prefix param keys with 'where_' to avoid conflicts
+        params_with_prefix = {f"where_{k}": v for k, v in params.items()}
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, {**data, **params_with_prefix})
+            conn.commit()
+            return cursor.rowcount
+        
+    async def delete_one(self, table: str, params: dict) -> Any:
+        """Delete a single record matching params asynchronously."""
+        conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
+        query = f"DELETE FROM {table} WHERE {conditions} LIMIT 1"
+        
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount
+    
+    async def delete_many(self, table: str, params: dict) -> Any:
         """Remove records matching params."""
         conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
         query = f"DELETE FROM {table} WHERE {conditions}"
@@ -176,27 +192,14 @@ class SQLiteDB(Database):
             cursor.execute(query, params)
             conn.commit()
             return cursor.rowcount
-    
-    async def find_async(self, table: str, params: Optional[Dict[str, Any]] = None) -> List[Dict]:
-        """Find records matching params asynchronously."""
-        return await self._run_in_executor(self.find, table, params)
-    
-    async def find_one_async(self, table: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict]:
-        """Find one record matching params asynchronously."""
-        return await self._run_in_executor(self.find_one, table, params)
-    
-    async def insert_async(self, table: str, data: dict) -> Any:
-        """Insert a record asynchronously."""
-        return await self._run_in_executor(self.insert, table, data)
-    
-    async def insert_many_async(self, table: str, data: List[dict]) -> Any:
-        """Insert multiple records asynchronously."""
-        return await self._run_in_executor(self.insert_many, table, data)
-    
-    async def update_async(self, table: str, params: dict, data: dict) -> Any:
-        """Update records matching params asynchronously."""
-        return await self._run_in_executor(self.update, table, params, data)
-    
-    async def remove_async(self, table: str, params: dict) -> Any:
-        """Remove records matching params asynchronously."""
-        return await self._run_in_executor(self.remove, table, params)
+
+    async def sum(self, table: str, column: str, params: dict = {}) -> Union[int, float]:
+        """Sum values in a column asynchronously."""
+        query = f"SELECT SUM({column}) as total FROM {table}"
+        if params:
+            conditions = " AND ".join(f"{k} = :{k}" for k in params.keys())
+            query += f" WHERE {conditions}"
+        
+        result = await self.query(query, params)
+        
+        return float(result[0]) if result and result[0] is not None else 0

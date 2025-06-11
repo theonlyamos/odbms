@@ -44,7 +44,7 @@ class MigrationManager:
                 executed_at TIMESTAMP
             );
             """
-            DBMS.Database.execute(create_table_sql)
+            DBMS.Database.query(create_table_sql)
         # else:
         #     # For MongoDB, we'll create a collection if it doesn't exist
         #     DBMS.Database.find('migrations', {}).limit(1)
@@ -79,7 +79,7 @@ class MigrationManager:
     def _get_applied_migrations(self) -> List[str]:
         """Get list of applied migration versions."""
         if DBMS.Database.dbms != 'mongodb':
-            results = DBMS.Database.execute("SELECT version FROM migrations ORDER BY version")
+            results = DBMS.Database.query("SELECT version FROM migrations ORDER BY version")
             return [row['version'] for row in results]
         else:
             results = DBMS.Database.find('migrations', {}, ['version'])
@@ -95,23 +95,23 @@ class MigrationManager:
                 if DBMS.Database.dbms != 'mongodb':
                     columns = [f"{col['name']} {col['type']}" for col in operation['columns']]
                     sql = f"CREATE TABLE {operation['table']} ({', '.join(columns)})"
-                    DBMS.Database.execute(sql)
+                    DBMS.Database.query(sql)
             
             elif op_type == 'add_column':
                 if DBMS.Database.dbms != 'mongodb':
                     sql = f"ALTER TABLE {operation['table']} ADD COLUMN {operation['column']} {operation['type']}"
-                    DBMS.Database.execute(sql)
+                    DBMS.Database.query(sql)
             
             elif op_type == 'drop_table':
                 if DBMS.Database.dbms != 'mongodb':
                     sql = f"DROP TABLE IF EXISTS {operation['table']}"
-                    DBMS.Database.execute(sql)
+                    DBMS.Database.query(sql)
                 else:
                     DBMS.Database.command('drop', operation['table'])
             
             elif op_type == 'custom_sql':
                 if DBMS.Database.dbms != 'mongodb':
-                    DBMS.Database.execute(operation['sql'])
+                    DBMS.Database.query(operation['sql'])
             
             elif op_type == 'mongodb_command':
                 if DBMS.Database.dbms == 'mongodb':
@@ -142,7 +142,7 @@ class MigrationManager:
                     if version in applied and version > target_version:
                         self._apply_migration(migration_data, 'down')
                         if DBMS.Database.dbms != 'mongodb':
-                            DBMS.Database.execute("DELETE FROM migrations WHERE version = %s", (version,))
+                            DBMS.Database.query("DELETE FROM migrations WHERE version = %s", (version,))
                         else:
                             DBMS.Database.remove('migrations', {'version': version})
         else:
@@ -159,7 +159,7 @@ class MigrationManager:
                     }
                     
                     if DBMS.Database.dbms != 'mongodb':
-                        DBMS.Database.execute(
+                        DBMS.Database.query(
                             "INSERT INTO migrations (version, description, created_at, executed_at) VALUES (%s, %s, %s, %s)",
                             (migration_record['version'], migration_record['description'],
                              migration_record['created_at'], migration_record['executed_at'])

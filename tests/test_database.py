@@ -22,7 +22,7 @@ def database():
     
     # Create users table
     if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
-        DBMS.Database.execute("""
+        DBMS.Database.query("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -38,7 +38,7 @@ def database():
     # Cleanup
     if DBMS.Database is not None:
         if DBMS.Database.dbms != 'mongodb':
-            DBMS.Database.execute("DROP TABLE IF EXISTS users")
+            DBMS.Database.query("DROP TABLE IF EXISTS users")
         DBMS.Database.disconnect()
 
 @pytest.fixture

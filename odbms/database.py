@@ -1,5 +1,4 @@
-from typing import Dict, List, Any, Optional
-import asyncio
+from typing import Dict, List, Any, Optional, Union
 
 class Database:
     """Base class for database implementations."""
@@ -10,80 +9,59 @@ class Database:
         self.connection = None
         self.config = kwargs
     
-    def connect(self) -> None:
+    async def connect(self) -> None:
         """Connect to the database."""
         raise NotImplementedError
     
-    def disconnect(self) -> None:
+    async def disconnect(self) -> None:
         """Disconnect from the database."""
         raise NotImplementedError
     
-    def execute(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    async def query(self, query: str, params: Optional[Dict[str, Any]] = None, **kwargs: Dict[str, Any]) -> Any:
         """Execute a raw query."""
         raise NotImplementedError
-    
-    def find(self, table: str, conditions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Find records matching conditions."""
-        raise NotImplementedError
-    
-    def find_one(self, table: str, conditions: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+
+    async def find_one(self, table: str, conditions: Dict[str, Any], **kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Find a single record matching conditions."""
         raise NotImplementedError
-    
-    def insert(self, table: str, data: Dict[str, Any]) -> Any:
+
+    async def find(self, table: str, conditions: Optional[Dict[str, Any]] = None,
+                  skip: int = 0, limit: int = 100, sort: Optional[List[tuple]] = None, **kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Find multiple records matching conditions."""
+        raise NotImplementedError
+
+    async def insert_one(self, table: str, data: Dict[str, Any], **kwargs: Dict[str, Any]) -> Any:
         """Insert a record."""
         raise NotImplementedError
     
-    def insert_many(self, table: str, data: List[Dict[str, Any]]) -> int:
+    async def insert_many(self, table: str, data: List[Dict[str, Any]], **kwargs: Dict[str, Any]) -> int:
         """Insert multiple records."""
         raise NotImplementedError
     
-    def update(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
-        """Update records matching conditions."""
+    async def update_one(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any], upsert: bool = False, **kwargs: Dict[str, Any]) -> int:
+        """Update a single record matching conditions."""
         raise NotImplementedError
     
-    def remove(self, table: str, conditions: Dict[str, Any]) -> int:
-        """Remove records matching conditions."""
+    async def update_many(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any], upsert: bool = False, **kwargs: Dict[str, Any]) -> int:
+        """Update multiple records matching conditions."""
         raise NotImplementedError
     
-    async def execute_async(self, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute a raw query asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.execute, query, params
-        )
+    async def delete_one(self, table: str, conditions: Dict[str, Any], **kwargs: Dict[str, Any]) -> int:
+        """Delete a single record matching conditions."""
+        raise NotImplementedError
+
+    async def delete_many(self, table: str, conditions: Dict[str, Any], **kwargs: Dict[str, Any]) -> int:
+        """Delete multiple records matching conditions."""
+        raise NotImplementedError
     
-    async def find_async(self, table: str, conditions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Find records matching conditions asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.find, table, conditions
-        )
+    async def sum(self, table: str, column: str, conditions: Optional[Dict[str, Any]] = None, **kwargs: Dict[str, Any]) -> Union[int, float]:
+        """Sum values in a column."""
+        raise NotImplementedError
     
-    async def find_one_async(self, table: str, conditions: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Find a single record matching conditions asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.find_one, table, conditions
-        )
+    async def count(self, table: str, conditions: Optional[Dict[str, Any]] = None, **kwargs: Dict[str, Any]) -> int:
+        """Count documents."""
+        raise NotImplementedError
     
-    async def insert_async(self, table: str, data: Dict[str, Any]) -> Any:
-        """Insert a record asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.insert, table, data
-        )
-    
-    async def insert_many_async(self, table: str, data: List[Dict[str, Any]]) -> int:
-        """Insert multiple records asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.insert_many, table, data
-        )
-    
-    async def update_async(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any]) -> int:
-        """Update records matching conditions asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.update, table, conditions, data
-        )
-    
-    async def remove_async(self, table: str, conditions: Dict[str, Any]) -> int:
-        """Remove records matching conditions asynchronously."""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, self.remove, table, conditions
-        )
+    async def aggregate(self, table: str, pipeline: List[Dict[str, Any]], **kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Perform aggregation."""
+        raise NotImplementedError
