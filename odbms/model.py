@@ -179,10 +179,20 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return cast(str, p.plural(name)) #type: ignore
     
     @classmethod
-    async def create_table(cls):
-        """
-        Create the database table for the model (Only for relational databases).
-        """
+    def create_table(cls):
+        if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            
+            if loop and loop.is_running():
+                asyncio.create_task(cls._create_table_async())
+            else:
+                asyncio.run(cls._create_table_async())
+    
+    @classmethod
+    async def _create_table_async(cls):
         if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
             excluded = ['created_at', 'updated_at', 'id']
             columns = []
@@ -204,7 +214,6 @@ class Model(BaseModel, metaclass=ModelMetaclass):
                 ],
                 
             }
-            # Get the model fields from Pydantic's model_fields attribute
             for field_name, field_info in cls.model_fields.items():
                 param_name = field_name
                 param_type = field_info.annotation
@@ -241,10 +250,20 @@ class Model(BaseModel, metaclass=ModelMetaclass):
                 EXECUTE PROCEDURE update_{cls.table_name()}_timestamp();""")
     
     @classmethod
-    async def drop_table(cls):
-        """
-        Drop the database table for the model.
-        """
+    def drop_table(cls):
+        if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            
+            if loop and loop.is_running():
+                asyncio.create_task(cls._drop_table_async())
+            else:
+                asyncio.run(cls._drop_table_async())
+    
+    @classmethod
+    async def _drop_table_async(cls):
         if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
             table_name = cls.table_name()
             query = f"DROP TABLE IF EXISTS {table_name};"
@@ -268,18 +287,23 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return type_mapping.get(attr_type, "TEXT")
 
     @classmethod
-    async def alter_table(cls, changes: dict):
-        """
-        Alter the table structure by adding, modifying, or dropping columns.
-
-        @param changes: A dictionary mapping column names to their new data types.
-        """
+    def alter_table(cls, changes: dict):
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        
+        if loop and loop.is_running():
+            asyncio.create_task(cls._alter_table_async(changes))
+        else:
+            asyncio.run(cls._alter_table_async(changes))
+    
+    @classmethod
+    async def _alter_table_async(cls, changes: dict):
         if DBMS.Database is not None and DBMS.Database.dbms != 'mongodb':
-            # Fetch existing columns from the database
             fetch_columns_sql = f"SELECT column_name FROM information_schema.columns WHERE table_name='{cls.table_name()}';"
             existing_columns = {row['column_name'] for row in await DBMS.Database.query(fetch_columns_sql)} # type: ignore
             default_columns = {'id', 'created_at', 'updated_at'}
-            # Determine columns to add or modify and columns to drop
             specified_columns = set(changes.keys())
             specified_columns.update(default_columns)
             columns_to_drop = existing_columns - specified_columns
@@ -287,28 +311,22 @@ class Model(BaseModel, metaclass=ModelMetaclass):
             
             alter_statements = []
 
-            # Handle adding or modifying columns
             for column, data_type in changes.items():
                 column_type = cls.get_column_type(data_type)
                 if column in columns_to_add_or_modify:
                     alter_statements.append(f"ADD COLUMN {column} {column_type}")
                 else:
-                    # Modify existing column
                     if DBMS.Database.dbms in ['mysql', 'postgresql']:
                         alter_statements.append(f"ALTER COLUMN {column} TYPE {column_type}")
                     elif DBMS.Database.dbms == 'sqlite':
-                        # SQLite does not support MODIFY COLUMN directly, needs table recreation
-                        continue  # Handle SQLite modifications separately if needed
+                        continue
 
-            # Handle dropping columns
             for column in columns_to_drop:
                 if DBMS.Database.dbms in ['mysql', 'postgresql']:
                     alter_statements.append(f"DROP COLUMN {column}")
                 elif DBMS.Database.dbms == 'sqlite':
-                    # SQLite does not support DROP COLUMN directly, needs table recreation
-                    continue  # Handle SQLite drops separately if needed
+                    continue
 
-            # Execute all alter statements
             for statement in alter_statements:
                 alter_sql = f"ALTER TABLE {cls.table_name()} {statement};"
                 await DBMS.Database.query(alter_sql)
@@ -557,13 +575,61 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return [cls(**cls.normalise(item)) for item in result] # type: ignore
 
     @classmethod
-    async def find_many(cls, conditions: Dict[str, Any] = {}) -> List[Self]:
-        """Find model instances matching the conditions."""
+    async def find_many(cls, conditions: Dict[str, Any] = {}, eager_load: List[str] = []) -> List[Self]:
+        """Find model instances matching the conditions with optional eager loading."""
         if DBMS.Database is None:
             raise RuntimeError("Database not initialized")
         
         results = await DBMS.Database.find(cls.table_name(), cls.normalise(conditions, 'params') if conditions else {})
-        return [cls(**cls.normalise(result)) for result in results]
+        instances = [cls(**cls.normalise(result)) for result in results]
+        
+        if eager_load:
+            await cls._eager_load_relationships(instances, eager_load)
+        
+        return instances
+    
+    @classmethod
+    async def _eager_load_relationships(cls, instances: List['Model'], relationships: List[str]) -> None:
+        """Eager load relationships to avoid N+1 queries."""
+        if not instances:
+            return
+        
+        for rel_name in relationships:
+            field = cls._fields.get(rel_name)
+            if not field or not isinstance(field, RelationshipField):
+                continue
+            
+            from importlib import import_module
+            module_path, model_name = field.model.rsplit('.', 1)
+            module = import_module(module_path)
+            related_model = getattr(module, model_name)
+            
+            if isinstance(field, (OneToMany, ManyToMany)):
+                all_ids = []
+                for inst in instances:
+                    ids = getattr(inst, f'_{rel_name}_ids', [])
+                    all_ids.extend(ids)
+                
+                if all_ids:
+                    all_ids = list(set(all_ids))
+                    related_instances = await related_model.find_many({'id': {'$in': all_ids}})
+                    related_map = {str(r.id): r for r in related_instances}
+                    
+                    for inst in instances:
+                        ids = getattr(inst, f'_{rel_name}_ids', [])
+                        field._cached_value = [related_map.get(str(id)) for id in ids if str(id) in related_map]
+            else:
+                all_ids = [getattr(inst, f'_{rel_name}_id') for inst in instances]
+                all_ids = [id for id in all_ids if id]
+                
+                if all_ids:
+                    all_ids = list(set(all_ids))
+                    related_instances = await related_model.find_many({'id': {'$in': all_ids}})
+                    related_map = {str(r.id): r for r in related_instances}
+                    
+                    for inst in instances:
+                        id = getattr(inst, f'_{rel_name}_id')
+                        field._cached_value = related_map.get(str(id)) if id else None
     
     @classmethod
     async def find_one(cls, conditions: Dict[str, Any] = {}) -> Optional[Self]:

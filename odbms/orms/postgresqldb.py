@@ -5,16 +5,17 @@ import aiopg
 from aiopg import Pool, Connection, Cursor
 
 from .base import ORM
+from ..query_utils import SQLIdentifier, QueryBuilder
 
 class PostgresqlDB(ORM):
     _db: Optional[Connection] = None
     _dbms: str = 'postgresql'
     _pool: Optional[Pool] = None
     _loop: Optional[asyncio.AbstractEventLoop] = None
+    _transaction_conn: Optional[Connection] = None
 
     @classmethod
     async def connect(cls, dbsettings: dict) -> None:
-        '''Connection method'''
         try:
             dsn = (
                 f"dbname={dbsettings.get('database')} "
@@ -23,10 +24,9 @@ class PostgresqlDB(ORM):
                 f"host={dbsettings.get('host', 'localhost')} "
                 f"port={dbsettings.get('port', 5432)}"
             )
-            cls._pool = await aiopg.create_pool(dsn)
+            cls._pool = await aiopg.create_pool(dsn, minsize=1, maxsize=10)
         except Exception as e:
             if 'database' in str(e):
-                # Try connecting without database to create it
                 dbsettings = dbsettings.copy()
                 dsn = (
                     f"user={dbsettings['user']} "
@@ -34,14 +34,13 @@ class PostgresqlDB(ORM):
                     f"host={dbsettings.get('host', 'localhost')} "
                     f"port={dbsettings.get('port', 5432)}"
                 )
-                cls._pool = await aiopg.create_pool(dsn)
+                cls._pool = await aiopg.create_pool(dsn, minsize=1, maxsize=10)
             else:
                 print(str(e))
                 exit(1)
     
     @classmethod
     async def disconnect(cls) -> None:
-        """Disconnect from PostgreSQL."""
         if cls._pool:
             cls._pool.close()
             if cls._loop:
@@ -51,8 +50,32 @@ class PostgresqlDB(ORM):
             cls._loop = None
     
     @classmethod
+    async def begin_transaction(cls) -> Connection:
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
+        cls._transaction_conn = await cls._pool.acquire()
+        async with cls._transaction_conn.cursor() as cur:
+            await cur.execute("BEGIN")
+        return cls._transaction_conn
+    
+    @classmethod
+    async def commit(cls) -> None:
+        if cls._transaction_conn:
+            async with cls._transaction_conn.cursor() as cur:
+                await cur.execute("COMMIT")
+            cls._pool.release(cls._transaction_conn)
+            cls._transaction_conn = None
+    
+    @classmethod
+    async def rollback(cls) -> None:
+        if cls._transaction_conn:
+            async with cls._transaction_conn.cursor() as cur:
+                await cur.execute("ROLLBACK")
+            cls._pool.release(cls._transaction_conn)
+            cls._transaction_conn = None
+
+    @classmethod
     async def query(cls, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute a query."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
         async with cls._pool.acquire() as conn:
@@ -62,13 +85,13 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def insert_one(cls, table: str, data: dict) -> Union[str, int]:
-        """Insert a record asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        columns = ', '.join(data.keys())
-        placeholders = ', '.join([f'%s'] * len(data))
-        query = f'INSERT INTO {table} ({columns}) VALUES ({placeholders}) RETURNING id'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        columns = SQLIdentifier.quote_identifiers(list(data.keys()), 'postgresql')
+        placeholders = ', '.join(['%s'] * len(data))
+        query = f'INSERT INTO {quoted_table} ({columns}) VALUES ({placeholders}) RETURNING id'
 
         async with cls._pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -78,14 +101,18 @@ class PostgresqlDB(ORM):
     
     @classmethod
     async def insert_many(cls, table: str, data: List[dict]):
-        """Insert multiple records asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
         
-        columns = ', '.join(data[0].keys())
-        placeholders = ', '.join([f'%s'] * len(data[0]))
-        query = f'INSERT INTO {table} ({columns}) VALUES ({placeholders})'
-        params = [tuple(item.values()) for item in data]
+        if not data:
+            return 0
+        
+        columns = list(data[0].keys())
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        quoted_columns = SQLIdentifier.quote_identifiers(columns, 'postgresql')
+        placeholders = ', '.join(['%s'] * len(columns))
+        query = f'INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})'
+        params = [tuple(item.get(c) for c in columns) for item in data]
 
         async with cls._pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -94,40 +121,39 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def find(cls, table: str, filter: Optional[Dict[str, Any]] = None, columns: list = ['*']) -> List[Dict[str, Any]]:
-        """Find records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT {", ".join(columns)} FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        col_str = SQLIdentifier.quote_identifiers(columns, 'postgresql') if columns != ['*'] else '*'
+        query = f'SELECT {col_str} FROM {quoted_table}'
+        params = ()
+        
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "postgresql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
             params = tuple(filter.values())
-        else:
-            params = ()
 
         async with cls._pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(query, params)
                 results = await cur.fetchall()
-                if not results:
-                    return []
-                
-                # Convert results to dictionaries
-                if cur.description is None:
+                if not results or cur.description is None:
                     return []
                 column_names = [desc[0] for desc in cur.description]
                 return [dict(zip(column_names, row)) for row in results]
 
     @classmethod
     async def find_one(cls, table: str, filter: dict = {}, columns: list = ['*']) -> Optional[Dict[str, Any]]:
-        """Find one record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT {", ".join(columns)} FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        col_str = SQLIdentifier.quote_identifiers(columns, 'postgresql') if columns != ['*'] else '*'
+        query = f'SELECT {col_str} FROM {quoted_table}'
+        
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "postgresql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
         query += ' LIMIT 1'
 
@@ -135,27 +161,23 @@ class PostgresqlDB(ORM):
             async with conn.cursor() as cur:
                 await cur.execute(query, tuple(filter.values()))
                 result = await cur.fetchone()
-                if not result:
-                    return None
-                
-                # Convert result to dictionary
-                if cur.description is None:
+                if not result or cur.description is None:
                     return None
                 column_names = [desc[0] for desc in cur.description]
                 return dict(zip(column_names, result))
 
     @classmethod
     async def update_many(cls, table: str, filter: dict, data: dict) -> int:
-        """Update records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
-        query = f'UPDATE {table} SET {set_clause}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        set_clause = ', '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in data.keys()])
+        query = f'UPDATE {quoted_table} SET {set_clause}'
         
         params = list(data.values())
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
             params.extend(filter.values())
 
@@ -166,16 +188,16 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def update_one(cls, table: str, filter: dict, data: dict) -> int:
-        """Update a single record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
-        query = f'UPDATE {table} SET {set_clause}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        set_clause = ', '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in data.keys()])
+        query = f'UPDATE {quoted_table} SET {set_clause}'
         
         params = list(data.values())
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
             params.extend(filter.values())
         query += ' LIMIT 1'
@@ -187,13 +209,13 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def delete_many(cls, table: str, filter: dict) -> int:
-        """Remove records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'DELETE FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        query = f'DELETE FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:
@@ -203,13 +225,13 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def delete_one(cls, table: str, filter: dict) -> int:
-        """Delete a single record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'DELETE FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        query = f'DELETE FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'postgresql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
         query += ' LIMIT 1'
 
@@ -220,13 +242,14 @@ class PostgresqlDB(ORM):
 
     @classmethod
     async def sum(cls, table: str, column: str, filter: dict = {}) -> Union[int, float]:
-        """Sum values in a column asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT SUM({column}) as total FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        quoted_column = SQLIdentifier.quote_identifier(column, 'postgresql')
+        query = f'SELECT SUM({quoted_column}) as total FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "postgresql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:
@@ -237,13 +260,13 @@ class PostgresqlDB(ORM):
     
     @classmethod
     async def count(cls, table: str, filter: dict = {}) -> int:
-        """Count records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
         
-        query = f'SELECT COUNT(*) FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'postgresql')
+        query = f'SELECT COUNT(*) FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "postgresql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:

@@ -7,16 +7,17 @@ import aiomysql
 from aiomysql import Pool, Connection, DictCursor
 
 from .base import ORM
+from ..query_utils import SQLIdentifier, QueryBuilder
 
 class MysqlDB(ORM):
     _db: Optional[Connection] = None
     _dbms: str = 'mysql'
     _pool: Optional[Pool] = None
     _loop: Optional[asyncio.AbstractEventLoop] = None
+    _transaction_conn: Optional[Connection] = None
 
     @classmethod
     def connect(cls, dbsettings: dict) -> None:
-        '''Connection method'''
         cls._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(cls._loop)
         
@@ -27,11 +28,12 @@ class MysqlDB(ORM):
                 user=dbsettings['user'],
                 password=dbsettings['password'],
                 db=dbsettings.get('database'),
-                autocommit=True
+                autocommit=True,
+                minsize=1,
+                maxsize=10
             ))
         except Exception as e:
             if 'Unknown database' in str(e):
-                # Try connecting without database to create it
                 dbsettings = dbsettings.copy()
                 del dbsettings['database']
                 cls._pool = cls._loop.run_until_complete(aiomysql.create_pool(
@@ -39,7 +41,9 @@ class MysqlDB(ORM):
                     port=dbsettings.get('port', 3306),
                     user=dbsettings['user'],
                     password=dbsettings['password'],
-                    autocommit=True
+                    autocommit=True,
+                    minsize=1,
+                    maxsize=10
                 ))
             else:
                 print(str(e))
@@ -47,7 +51,6 @@ class MysqlDB(ORM):
     
     @classmethod
     def disconnect(cls) -> None:
-        """Disconnect from MySQL."""
         if cls._pool:
             cls._pool.close()
             if cls._loop:
@@ -57,8 +60,32 @@ class MysqlDB(ORM):
             cls._loop = None
     
     @classmethod
+    async def begin_transaction(cls) -> Connection:
+        if cls._pool is None:
+            raise RuntimeError("Database not connected")
+        cls._transaction_conn = await cls._pool.acquire()
+        async with cls._transaction_conn.cursor() as cur:
+            await cur.execute("START TRANSACTION")
+        return cls._transaction_conn
+    
+    @classmethod
+    async def commit(cls) -> None:
+        if cls._transaction_conn:
+            async with cls._transaction_conn.cursor() as cur:
+                await cur.execute("COMMIT")
+            cls._pool.release(cls._transaction_conn)
+            cls._transaction_conn = None
+    
+    @classmethod
+    async def rollback(cls) -> None:
+        if cls._transaction_conn:
+            async with cls._transaction_conn.cursor() as cur:
+                await cur.execute("ROLLBACK")
+            cls._pool.release(cls._transaction_conn)
+            cls._transaction_conn = None
+    
+    @classmethod
     def _run_sync(cls, coro):
-        """Run coroutine synchronously."""
         if cls._loop is None or cls._loop.is_closed():
             cls._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(cls._loop)
@@ -66,28 +93,25 @@ class MysqlDB(ORM):
     
     @classmethod
     def update(cls, table: str, filter: dict, data: dict) -> int:
-        """Update records matching filter."""
         return cls._run_sync(cls.update_async(table, filter, data))
             
     @classmethod
     def remove(cls, table: str, filter: dict) -> int:
-        """Remove records matching filter."""
         return cls._run_sync(cls.remove_async(table, filter))
 
     @classmethod
     def sum(cls, table: str, column: str, filter: dict = {}) -> Union[int, float]:
-        """Sum values in a column."""
         return cls._run_sync(cls.sum_async(table, column, filter))
 
     @classmethod
     async def insert_one(cls, table: str, data: dict) -> Union[str, int]:
-        """Insert a record asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'INSERT INTO {table}('
-        query += ', '.join(data.keys())
-        query += ") VALUES(%s" + ", %s" * (len(data) - 1) + ")"
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        columns = SQLIdentifier.quote_identifiers(list(data.keys()), 'mysql')
+        placeholders = ', '.join(['%s'] * len(data))
+        query = f'INSERT INTO {quoted_table} ({columns}) VALUES ({placeholders})'
 
         async with cls._pool.acquire() as conn:
             async with conn.cursor(DictCursor) as cur:
@@ -96,13 +120,15 @@ class MysqlDB(ORM):
 
     @classmethod
     async def find(cls, table: str, filter: dict = {}, columns: list = ['*']) -> List[Dict[str, Any]]:
-        """Find records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT {", ".join(columns)} FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        col_str = SQLIdentifier.quote_identifiers(columns, 'mysql') if columns != ['*'] else '*'
+        query = f'SELECT {col_str} FROM {quoted_table}'
+        
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "mysql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:
@@ -113,13 +139,15 @@ class MysqlDB(ORM):
 
     @classmethod
     async def find_one(cls, table: str, filter: dict = {}, columns: list = ['*']) -> Optional[Dict[str, Any]]:
-        """Find one record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT {", ".join(columns)} FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        col_str = SQLIdentifier.quote_identifiers(columns, 'mysql') if columns != ['*'] else '*'
+        query = f'SELECT {col_str} FROM {quoted_table}'
+        
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "mysql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
         query += ' LIMIT 1'
 
@@ -131,16 +159,16 @@ class MysqlDB(ORM):
 
     @classmethod
     async def update_async(cls, table: str, filter: dict, data: dict) -> int:
-        """Update records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
-        query = f'UPDATE {table} SET {set_clause}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        set_clause = ', '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in data.keys()])
+        query = f'UPDATE {quoted_table} SET {set_clause}'
         
         params = list(data.values())
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
             params.extend(filter.values())
 
@@ -151,16 +179,16 @@ class MysqlDB(ORM):
 
     @classmethod
     async def update_one(cls, table: str, filter: dict, data: dict) -> int:
-        """Update a single record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
-        query = f'UPDATE {table} SET {set_clause}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        set_clause = ', '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in data.keys()])
+        query = f'UPDATE {quoted_table} SET {set_clause}'
         
         params = list(data.values())
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
             params.extend(filter.values())
         query += ' LIMIT 1'
@@ -172,18 +200,17 @@ class MysqlDB(ORM):
 
     @classmethod
     async def update_many(cls, table: str, filter: dict, data: dict) -> int:
-        """Update multiple records matching filter asynchronously."""
         return await cls.update_async(table, filter, data)
 
     @classmethod
     async def remove_async(cls, table: str, filter: dict) -> int:
-        """Remove records matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'DELETE FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        query = f'DELETE FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:
@@ -193,13 +220,13 @@ class MysqlDB(ORM):
 
     @classmethod
     async def delete_one(cls, table: str, filter: dict) -> int:
-        """Delete a single record matching filter asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'DELETE FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        query = f'DELETE FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f"{k} = %s" for k in filter.keys()])
+            conditions = ' AND '.join([f"{SQLIdentifier.quote_identifier(k, 'mysql')} = %s" for k in filter.keys()])
             query += f' WHERE {conditions}'
         query += ' LIMIT 1'
 
@@ -210,18 +237,18 @@ class MysqlDB(ORM):
 
     @classmethod
     async def delete_many(cls, table: str, filter: dict) -> int:
-        """Delete multiple records matching filter asynchronously."""
         return await cls.remove_async(table, filter)
 
     @classmethod
     async def sum_async(cls, table: str, column: str, filter: dict = {}) -> Union[int, float]:
-        """Sum values in a column asynchronously."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
 
-        query = f'SELECT SUM({column}) as total FROM {table}'
+        quoted_table = SQLIdentifier.quote_identifier(table, 'mysql')
+        quoted_column = SQLIdentifier.quote_identifier(column, 'mysql')
+        query = f'SELECT SUM({quoted_column}) as total FROM {quoted_table}'
         if filter:
-            conditions = ' AND '.join([f'{k} = %s' for k in filter.keys()])
+            conditions = ' AND '.join([f'{SQLIdentifier.quote_identifier(k, "mysql")} = %s' for k in filter.keys()])
             query += f' WHERE {conditions}'
 
         async with cls._pool.acquire() as conn:
@@ -235,7 +262,6 @@ class MysqlDB(ORM):
 
     @classmethod
     async def query(cls, query: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute a query."""
         if cls._pool is None:
             raise RuntimeError("Database not connected")
         async with cls._pool.acquire() as conn:
