@@ -120,6 +120,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     # Class variables for table configuration
     __abstract__: ClassVar[bool] = False
     __table_name__: ClassVar[Optional[str]] = None
+    TABLE_NAME: ClassVar[Optional[str]] = None
     _fields: ClassVar[Dict[str, ModelField]] = {}
     
     # Async event hooks
@@ -173,10 +174,12 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         '''Get the table name for the model.'''
         if cls.__table_name__:
             return cls.__table_name__
+        if cls.TABLE_NAME:
+            return cls.TABLE_NAME
         
         name = cls.__name__.lower()
         p = inflect.engine()
-        return cast(str, p.plural(name)) #type: ignore
+        return cast(str, p.plural(name))
     
     @classmethod
     def create_table(cls):
