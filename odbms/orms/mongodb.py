@@ -37,6 +37,10 @@ class MongoDB(Database):
         port = self.config.get('port', 27017)
         database = self.config['database']
         
+        # Ensure port is an integer
+        if isinstance(port, str):
+            port = int(port)
+        
         self.client = AsyncIOMotorClient(host=host, port=port)
         self.db = self.client[database]
     
@@ -71,14 +75,14 @@ class MongoDB(Database):
         if self.db is None:
             raise RuntimeError("Database not connected")
         result = await self.db[table].insert_one(data)
-        return result.inserted_id
+        return str(result.inserted_id)
     
-    async def insert_many(self, table: str, data: List[Dict[str, Any]]) -> int:
+    async def insert_many(self, table: str, data: List[Dict[str, Any]]) -> List[str]:
         """Insert multiple records."""
         if self.db is None:
             raise RuntimeError("Database not connected")
         result = await self.db[table].insert_many(data)
-        return len(result.inserted_ids)
+        return [str(id) for id in result.inserted_ids]
     
     async def update_one(self, table: str, conditions: Dict[str, Any], data: Dict[str, Any], upsert: bool = False, **kwargs: Dict[str, Any]) -> int:
         """Update a single record matching conditions."""

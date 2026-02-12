@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Self, Union, Any, List, Dict, Type, ClassVar, cast, Callable, Coroutine, Annotated, get_args, get_origin
+from typing import Optional, Self, Union, Any, List, Dict, Type, ClassVar, cast, Callable, Coroutine, Annotated, get_args, get_origin, Sequence
 import inspect
 import json
 import asyncio
@@ -110,7 +110,8 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     
     model_config = {
         'arbitrary_types_allowed': True,
-        'from_attributes': True
+        'from_attributes': True,
+        'populate_by_name': True,
     }
     
     id: Optional[Union[str, int, PyObjectId]] = Field(alias="_id", default=None)
@@ -146,12 +147,12 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         
         # Process any remaining data that wasn't handled by Pydantic
         for key, value in data.items():
-            if key not in self.__annotations__:
+            if key not in self.model_fields:
                 self._dynamic_fields[key] = value
     
     def __setattr__(self, name, value):
         # Check if it's a defined field in the model
-        if name in self.__annotations__:
+        if name in self.model_fields:
             super().__setattr__(name, value)
         else:
             # Store undefined fields in _dynamic_fields
@@ -361,10 +362,24 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         if isinstance(DBMS.Database, MongoDB):
             if optype == 'dbresult':
                 content = dict(content)
-                content['id'] = str(content.pop('_id'))
+                if '_id' in content:
+                    object_id = content.pop('_id')
+                    content['id'] = str(object_id) if object_id is not None else None
+                elif 'id' in content and content['id'] is not None:
+                    content['id'] = str(content['id'])
             else:
                 if 'id' in content:
-                    content['_id'] = ObjectId(content.pop('id'))
+                    object_id = content.pop('id')
+                    if object_id in (None, ''):
+                        pass
+                    else:
+                        object_id_str = str(object_id).strip().lower()
+                        if object_id_str in ('none', 'null', 'undefined'):
+                            pass
+                        elif isinstance(object_id, ObjectId):
+                            content['_id'] = object_id
+                        else:
+                            content['_id'] = ObjectId(object_id)
         else:
             if optype == 'params':
                 # Handle MongoDB-style operators for SQL databases
@@ -483,12 +498,14 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return result
     
     def json(self) -> dict:
-        """Convert model to JSON, including relationships."""
-        data = self.model_dump(exclude={'password'}, by_alias=True)
-        if isinstance(data['created_at'], datetime):
+        """Convert model to JSON, including relationships. Uses 'id' for API compatibility."""
+        data = self.model_dump(exclude={'password'}, by_alias=False)
+        if isinstance(data.get('created_at'), datetime):
             data['created_at'] = data['created_at'].isoformat()
-        if isinstance(data['updated_at'], datetime):
+        if isinstance(data.get('updated_at'), datetime):
             data['updated_at'] = data['updated_at'].isoformat()
+        if data.get('id') is not None:
+            data['id'] = str(data['id'])
         # Add relationships
         for name, field in self._fields.items():
             if isinstance(field, RelationshipField):
@@ -511,6 +528,8 @@ class Model(BaseModel, metaclass=ModelMetaclass):
     @classmethod
     def after_save(cls, func: Callable[[Any], Coroutine[Any, Any, None]]) -> Callable[[Any], Coroutine[Any, Any, None]]:
         """Decorator to register an async after_save hook."""
+        print('----After save hook registered----')
+        print(func)
         cls._after_save_hooks.append(func)
         return func
     
@@ -592,7 +611,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         return instances
     
     @classmethod
-    async def _eager_load_relationships(cls, instances: List['Model'], relationships: List[str]) -> None:
+    async def _eager_load_relationships(cls, instances: Sequence['Model'], relationships: List[str]) -> None:
         """Eager load relationships to avoid N+1 queries."""
         if not instances:
             return
@@ -765,11 +784,8 @@ class Model(BaseModel, metaclass=ModelMetaclass):
             result = await DBMS.Database.insert_one(self.table_name(), self.normalise(data, 'params'))
             # Update instance id if provided
             if result:
-                if isinstance(DBMS.Database, MongoDB):
-                    self.id = str(result)  # Convert ObjectId to string
-                else:
-                    self.id = result
-        
+                self.id = result
+
         # Run after_save hooks
         await self._run_hooks(self._after_save_hooks)
         

@@ -1,6 +1,121 @@
 import pytest
 from odbms.orms.mongodb import MongoDB
+from odbms.dbms import DBMS
 import asyncio
+
+class TestMongoDBInitialization:
+    """Test MongoDB initialization with default values."""
+    
+    @pytest.fixture(autouse=True)
+    def cleanup(self):
+        """Override the async cleanup fixture from conftest with a sync version."""
+        # Disconnect any existing connection before test
+        if DBMS.Database is not None:
+            DBMS.Database.disconnect()
+            DBMS.Database = None
+            DBMS._initialized = False
+        yield
+        # Cleanup after test
+        if DBMS.Database is not None:
+            DBMS.Database.disconnect()
+            DBMS.Database = None
+            DBMS._initialized = False
+    
+    def test_mongodb_init_with_defaults(self):
+        """Test MongoDB initialization with default values."""
+        # Create MongoDB instance with minimal config (only database required)
+        db = MongoDB(database='test_default_db')
+        
+        # Verify config contains only what was passed
+        assert db.config['database'] == 'test_default_db'
+        # host and port are not in config until connect() is called
+        assert 'host' not in db.config
+        assert 'port' not in db.config
+        assert db.dbms == 'mongodb'
+        assert db.client is None
+        assert db.db is None
+    
+    def test_mongodb_init_with_custom_values(self):
+        """Test MongoDB initialization with custom values."""
+        db = MongoDB(
+            host='mongodb.example.com',
+            port=27018,
+            database='custom_db'
+        )
+        
+        assert db.config['host'] == 'mongodb.example.com'
+        assert db.config['port'] == 27018
+        assert db.config['database'] == 'custom_db'
+    
+    def test_mongodb_init_with_string_port(self):
+        """Test MongoDB initialization handles string port conversion."""
+        db = MongoDB(
+            host='localhost',
+            port='27017',  # String port
+            database='test_db'
+        )
+        
+        # Port should be stored as string initially
+        assert db.config['port'] == '27017'
+        
+        # Connect and verify port is converted to int
+        db.connect()
+        assert db.client is not None
+        assert db.db is not None
+        
+        db.disconnect()
+    
+    @pytest.mark.asyncio
+    async def test_dbms_initialize_async_with_defaults(self):
+        """Test DBMS.initialize_async with default MongoDB values."""
+        # Initialize with minimal parameters
+        await DBMS.initialize_async(
+            dbms='mongodb',
+            database='test_dbms_defaults'
+        )
+        
+        # Verify initialization
+        assert DBMS.Database is not None
+        assert DBMS.Database.dbms == 'mongodb'
+        assert DBMS._initialized is True
+        
+        # Verify default values
+        assert DBMS.Database.config['host'] == 'localhost'
+        assert DBMS.Database.config['port'] == 27017
+        assert DBMS.Database.config['database'] == 'test_dbms_defaults'
+        
+        # Verify connection is established
+        assert DBMS.Database.client is not None
+        assert DBMS.Database.db is not None
+        
+        # Cleanup
+        await DBMS.disconnect_async()
+    
+    @pytest.mark.asyncio
+    async def test_dbms_initialize_async_with_string_port(self):
+        """Test DBMS.initialize_async handles string port."""
+        await DBMS.initialize_async(
+            dbms='mongodb',
+            host='localhost',
+            port='27017',  # String port
+            database='test_string_port'
+        )
+        
+        # Verify initialization succeeded
+        assert DBMS.Database is not None
+        assert DBMS.Database.client is not None
+        
+        # Cleanup
+        await DBMS.disconnect_async()
+    
+    def test_mongodb_connect_applies_default_host(self):
+        """Test that connect() uses default host when not specified."""
+        db = MongoDB(database='test_connect_defaults')
+        
+        # Verify defaults before connect
+        assert db.config.get('host', 'localhost') == 'localhost'
+        assert db.config.get('port', 27017) == 27017
+
 
 @pytest.fixture
 def db():
