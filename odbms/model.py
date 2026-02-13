@@ -362,6 +362,7 @@ class Model(BaseModel, metaclass=ModelMetaclass):
         if isinstance(DBMS.Database, MongoDB):
             if optype == 'dbresult':
                 content = dict(content)
+                content.pop('_dynamic_fields', None)  # Strip internal keys from DB results
                 if '_id' in content:
                     object_id = content.pop('_id')
                     content['id'] = str(object_id) if object_id is not None else None
